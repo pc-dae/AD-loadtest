@@ -61,13 +61,13 @@ clean: ## Stop the lab and delete the domain, metrics and results
 images: ## Build the Samba DC and JMeter/controller images (tag :dev)
 	$(COMPOSE) build dc1 controller
 
-REGISTRY ?= paulcalrtondae
-TAG      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+REGISTRY  ?= paulcarltondae
+TAG       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+PLATFORMS ?= linux/arm64,linux/amd64
 
-images-push: images ## Tag and push both images to Docker Hub: make images-push REGISTRY=... TAG=...
-	for img in ad-loadtest-samba-dc ad-loadtest-jmeter; do \
-	  docker tag $$img:dev $(REGISTRY)/$$img:$(TAG) && docker push $(REGISTRY)/$$img:$(TAG); \
-	done
+images-push: ## Build multi-arch images and push to Docker Hub: make images-push TAG=0.1.0
+	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/ad-loadtest-samba-dc:$(TAG) --push docker/samba-dc
+	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/ad-loadtest-jmeter:$(TAG) -f docker/jmeter/Dockerfile --push .
 
 kind-up: images ## Create the kind cluster (if needed), load images and deploy the chart
 	@kind get clusters | grep -qx $(KIND_CLUSTER) || kind create cluster --config kind/cluster.yaml
