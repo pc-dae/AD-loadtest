@@ -1,0 +1,33 @@
+{{- if .Values.ingress.enabled }}
+{{- range $component, $port := dict "controller" 8080 "grafana" 3000 }}
+{{- $host := index $.Values.ingress.hosts $component }}
+{{- if $host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels: {{- include "adlt.labels" $ | nindent 4 }}
+  {{- with $.Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ $.Values.ingress.className }}
+  {{- if $.Values.ingress.tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $.Release.Name }}-{{ $component }}-tls
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-{{ $component }}
+                port: { number: {{ $port }} }
+{{- end }}
+{{- end }}
+{{- end }}

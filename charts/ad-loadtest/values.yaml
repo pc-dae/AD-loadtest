@@ -1,0 +1,96 @@
+# Target Active Directory domain. With samba.enabled the chart runs its own lab DC and
+# dc.host is derived from the release; otherwise set dc.host to a real domain controller.
+domain:
+  realm: LAB.LOCAL
+  netbios: LAB
+  upnSuffix: lab.local
+  baseDn: DC=lab,DC=local
+  authzGroupDn: CN=LT-Authorised,CN=Users,DC=lab,DC=local
+  serviceUser: svc-ltapp
+  # Kerberos service principal for service-ticket samples, service@host form. Only has to
+  # exist in AD, the load generators never resolve it.
+  kerberosSpn: ldap@dc1.lab.local
+
+dc:
+  # Hostname or IP the load generators connect to. Empty = the in-cluster Samba DC.
+  host: ""
+  ldapPort: 636
+  ldapTls: true
+  ldapTrustAll: true
+  smbShare: netlogon
+
+# Lab passwords. Use existingSecret (keys adminPassword, testUserPassword) for anything real.
+secrets:
+  existingSecret: ""
+  adminPassword: Adm1n-LoadTest!
+  testUserPassword: LoadTest-Passw0rd
+
+# Test users: ltuser00001..N, a quarter direct members of LT-Authorised, a quarter nested,
+# half denied. The users CSV is generated with the same scheme, so it matches whatever
+# seeded the domain (the Samba DC here, or the PowerShell seeding for Windows DCs).
+users:
+  count: 500
+  # Supply your own users.csv (key users.csv) instead of generating one.
+  existingConfigMap: ""
+
+samba:
+  enabled: true
+  image:
+    repository: ad-loadtest-samba-dc
+    tag: dev
+    pullPolicy: IfNotPresent
+  hostname: dc1
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  resources: {}
+
+controller:
+  image:
+    repository: ad-loadtest-jmeter
+    tag: dev
+    pullPolicy: IfNotPresent
+  # URL the browser uses to reach Grafana, for the embedded dashboard.
+  grafanaUrl: http://localhost:13000
+  heap: "-Xms512m -Xmx2g"
+  service:
+    type: ClusterIP
+    nodePort: null
+  persistence:
+    size: 2Gi
+    storageClass: ""
+  # Extra JMeter properties appended to the generated profile.
+  extraProperties: {}
+  resources: {}
+
+influxdb:
+  image:
+    repository: influxdb
+    tag: "1.11"
+  persistence:
+    size: 2Gi
+    storageClass: ""
+
+grafana:
+  image:
+    repository: grafana/grafana-oss
+    tag: "12.4.3"
+  adminPassword: admin
+  anonymousViewer: true
+  service:
+    type: ClusterIP
+    nodePort: null
+
+# Ingress for the web controller and Grafana, e.g. on mac-k8s clusters:
+#   ingress: { enabled: true, hosts: { controller: ad-loadtest.kubernetes.local.internal,
+#              grafana: ad-loadtest-grafana.kubernetes.local.internal } }
+# and set controller.grafanaUrl to https://<grafana host>.
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: local-ca-issuer
+  tls: true
+  hosts:
+    controller: ""
+    grafana: ""

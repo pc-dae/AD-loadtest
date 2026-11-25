@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: JMeter
+        uid: influx-jmeter
+        type: influxdb
+        access: proxy
+        url: http://{{ .Release.Name }}-influxdb:8086
+        jsonData: { dbName: jmeter, httpMode: GET }
+        isDefault: true
+      - name: Telegraf
+        uid: influx-telegraf
+        type: influxdb
+        access: proxy
+        url: http://{{ .Release.Name }}-influxdb:8086
+        jsonData: { dbName: telegraf, httpMode: GET }
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: ad-loadtest
+        folder: AD load test
+        type: file
+        allowUiUpdates: true
+        options: { path: /var/lib/grafana/dashboards }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboards
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "dashboards/*.json").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-grafana
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.grafana.service.type }}
+  selector: {{- include "adlt.selector" (dict "root" . "component" "grafana") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      {{- if and (eq .Values.grafana.service.type "NodePort") .Values.grafana.service.nodePort }}
+      nodePort: {{ .Values.grafana.service.nodePort }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-grafana
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "grafana") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        {{- include "adlt.selector" (dict "root" . "component" "grafana") | nindent 8 }}
+      annotations:
+        checksum/dashboards: {{ (.Files.Glob "dashboards/*.json").AsConfig | sha256sum }}
+    spec:
+      containers:
+        - name: grafana
+          image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+          env:
+            - { name: GF_SECURITY_ADMIN_PASSWORD, value: {{ .Values.grafana.adminPassword | quote }} }
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: {{ .Values.grafana.anonymousViewer | quote }} }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
+            - { name: GF_SECURITY_ALLOW_EMBEDDING, value: "true" }
+            - { name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/ad-loadtest.json }
+          ports:
+            - { name: http, containerPort: 3000 }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+          volumeMounts:
+            - { name: provisioning, mountPath: /etc/grafana/provisioning/datasources/datasources.yaml, subPath: datasources.yaml }
+            - { name: provisioning, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml, subPath: dashboards.yaml }
+            - { name: dashboards, mountPath: /var/lib/grafana/dashboards }
+      volumes:
+        - name: provisioning
+          configMap: { name: {{ .Release.Name }}-grafana }
+        - name: dashboards
+          configMap: { name: {{ .Release.Name }}-dashboards }

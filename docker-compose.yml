@@ -1,0 +1,124 @@
+# Local lab: Samba AD DC + InfluxDB + Grafana + Telegraf. JMeter runs on demand (profile "test").
+name: ad-loadtest
+
+x-lab-secrets: &lab-secrets
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Adm1n-LoadTest!}
+  TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:-LoadTest-Passw0rd}
+  SERVICE_PASSWORD: ${TEST_USER_PASSWORD:-LoadTest-Passw0rd}
+
+services:
+  dc1:
+    image: ad-loadtest-samba-dc:dev
+    build: docker/samba-dc
+    hostname: dc1
+    domainname: lab.local
+    # Samba stores NT ACLs in security.* xattrs, which need CAP_SYS_ADMIN.
+    privileged: true
+    environment:
+      <<: *lab-secrets
+      REALM: LAB.LOCAL
+      DOMAIN: LAB
+      SEED_USERS: ${SEED_USERS:-500}
+    volumes:
+      - samba-lib:/var/lib/samba
+      - samba-etc:/etc/samba
+      - ./data:/export
+    networks:
+      lab:
+        aliases: [dc1.lab.local]
+    # Loopback only, for running the JMeter GUI on the Mac against the lab.
+    ports:
+      - "127.0.0.1:1088:88"
+      - "127.0.0.1:1389:389"
+      - "127.0.0.1:1636:636"
+      - "127.0.0.1:1445:445"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/88 && </dev/tcp/127.0.0.1/636 && </dev/tcp/127.0.0.1/445' && test -s /export/users.csv"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+
+  influxdb:
+    image: influxdb:1.11
+    environment:
+      INFLUXDB_DB: jmeter
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+    volumes:
+      - influx-data:/var/lib/influxdb
+    networks: [lab]
+    ports:
+      - "127.0.0.1:8086:8086"
+
+  grafana:
+    image: grafana/grafana-oss:12.4.3
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ad-loadtest.json
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./charts/ad-loadtest/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks: [lab]
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [influxdb]
+
+  telegraf:
+    image: telegraf:1.40
+    # Run as root (bypassing the image's privilege drop) so it can read the Docker socket.
+    entrypoint: ["telegraf"]
+    user: root
+    volumes:
+      - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [lab]
+    depends_on: [influxdb]
+
+  # Web front end for driving tests: http://localhost:8080
+  controller:
+    image: ad-loadtest-jmeter:dev
+    build:
+      context: .
+      dockerfile: docker/jmeter/Dockerfile
+    entrypoint: ["java", "-jar", "/opt/ad-loadtest/controller.jar"]
+    environment:
+      GRAFANA_URL: http://localhost:3000
+    volumes:
+      - ./jmeter:/config:ro
+      - ./data:/data:ro
+      - ./results:/results
+    networks: [lab]
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      dc1:
+        condition: service_healthy
+
+  jmeter:
+    image: ad-loadtest-jmeter:dev
+    build:
+      context: .
+      dockerfile: docker/jmeter/Dockerfile
+    profiles: [test]
+    volumes:
+      - ./jmeter:/config:ro
+      - ./data:/data:ro
+      - ./results:/results
+    networks: [lab]
+    depends_on:
+      dc1:
+        condition: service_healthy
+
+networks:
+  lab: {}
+
+volumes:
+  samba-lib: {}
+  samba-etc: {}
+  influx-data: {}
+  grafana-data: {}

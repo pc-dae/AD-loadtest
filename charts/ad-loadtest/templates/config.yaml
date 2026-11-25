@@ -1,0 +1,55 @@
+{{- $dc := include "adlt.dcHost" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+data:
+  # Target profile for this cluster; shows up in the web UI as "{{ .Release.Name }}".
+  {{ .Release.Name }}.properties: |
+    ad.host={{ $dc }}
+    ad.domain={{ .Values.domain.netbios }}
+    ad.realm={{ .Values.domain.realm }}
+    ad.upnSuffix={{ .Values.domain.upnSuffix }}
+    ad.baseDn={{ .Values.domain.baseDn }}
+    ldap.port={{ .Values.dc.ldapPort }}
+    ldap.tls={{ .Values.dc.ldapTls }}
+    ldap.trustAll={{ .Values.dc.ldapTrustAll }}
+    authz.bindAs=user
+    authz.groupDn={{ .Values.domain.authzGroupDn }}
+    authz.serviceUser={{ .Values.domain.serviceUser }}
+    authz.servicePassword=@TEST_USER_PASSWORD@
+    kerberos.spn={{ .Values.domain.kerberosSpn }}
+    smb.share={{ .Values.dc.smbShare }}
+    users.csv=/data/users.csv
+    ldap.threads=5
+    kerberos.threads=5
+    ntlm.threads=5
+    rampup=10
+    duration=120
+    think.ms=0
+    influx.url=http://{{ .Release.Name }}-influxdb:8086/write?db=jmeter
+    app=ad-loadtest
+    {{- range $k, $v := .Values.controller.extraProperties }}
+    {{ $k }}={{ $v }}
+    {{- end }}
+  krb5.conf: |
+    [libdefaults]
+      default_realm = {{ .Values.domain.realm }}
+      dns_lookup_kdc = false
+      dns_lookup_realm = false
+      dns_canonicalize_hostname = false
+      rdns = false
+      udp_preference_limit = 1
+      kdc_timeout = 5000
+      max_retries = 1
+      default_tkt_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+      default_tgs_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+      permitted_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+    [realms]
+      {{ .Values.domain.realm }} = {
+        kdc = {{ $dc }}:88
+      }
+    [domain_realm]
+      .{{ lower .Values.domain.upnSuffix }} = {{ .Values.domain.realm }}
+      {{ lower .Values.domain.upnSuffix }} = {{ .Values.domain.realm }}

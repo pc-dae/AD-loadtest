@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-influxdb
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "adlt.selector" (dict "root" . "component" "influxdb") | nindent 4 }}
+  ports:
+    - { name: http, port: 8086 }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-influxdb
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "adlt.storageClass" .Values.influxdb.persistence.storageClass | nindent 2 }}
+  resources: { requests: { storage: {{ .Values.influxdb.persistence.size }} } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-influxdb
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "influxdb") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        {{- include "adlt.selector" (dict "root" . "component" "influxdb") | nindent 8 }}
+    spec:
+      containers:
+        - name: influxdb
+          image: "{{ .Values.influxdb.image.repository }}:{{ .Values.influxdb.image.tag }}"
+          env:
+            - { name: INFLUXDB_DB, value: jmeter }
+            - { name: INFLUXDB_HTTP_AUTH_ENABLED, value: "false" }
+          ports:
+            - { name: http, containerPort: 8086 }
+          readinessProbe:
+            httpGet: { path: /ping, port: http }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/influxdb }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-influxdb }

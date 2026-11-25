@@ -1,0 +1,1169 @@
+{
+  "uid": "ad-loadtest",
+  "title": "AD authentication load test",
+  "tags": [
+    "jmeter",
+    "active-directory"
+  ],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "application",
+        "label": "Application",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influx-jmeter"
+        },
+        "query": "SHOW TAG VALUES FROM \"jmeter\" WITH KEY = \"application\"",
+        "refresh": 2,
+        "current": {
+          "text": "ad-loadtest",
+          "value": "ad-loadtest"
+        }
+      },
+      {
+        "name": "transaction",
+        "label": "Transaction",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influx-jmeter"
+        },
+        "query": "SHOW TAG VALUES FROM \"jmeter\" WITH KEY = \"transaction\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal'",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Test start/end",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influx-jmeter"
+        },
+        "enable": true,
+        "iconColor": "#c3c2b7",
+        "query": "SELECT \"text\" FROM \"events\" WHERE \"application\" =~ /^$application$/ AND $timeFilter",
+        "textColumn": "text"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Requests",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Total samples in the selected time range, all protocols.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"count\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'all' AND \"statut\" = 'all' AND $timeFilter",
+          "alias": "Requests",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Throughput",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Mean authentications + authorisations per second over the range.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"count\") / 5 FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'all' AND \"statut\" = 'all' AND $timeFilter GROUP BY time(5s) fill(none)",
+          "alias": "req/s",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Mean response",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Mean sample time across all transactions.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"avg\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'all' AND \"statut\" = 'all' AND $timeFilter",
+          "alias": "mean",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "title": "p95 response",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Worst 5-second p95 seen in the range.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT max(\"pct95.0\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'all' AND \"statut\" = 'all' AND $timeFilter",
+          "alias": "p95",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Errors",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Failed samples: auth failures, timeouts and unexpected authorisation outcomes.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"countError\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'all' AND \"statut\" = 'all' AND $timeFilter",
+          "alias": "errors",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Active threads",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Virtual users currently running.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT max(\"meanAT\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" = 'internal' AND $timeFilter GROUP BY time(5s) fill(none)",
+          "alias": "threads",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Per transaction",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "title": "Throughput by transaction",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Samples per second for each LDAP, Kerberos and NTLM operation.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"count\") / 5 FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'all' AND $timeFilter GROUP BY time(5s), \"transaction\" fill(null)",
+          "alias": "$tag_transaction",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP bind"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP authz (group in chain)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos TGT (AS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos service ticket (TGS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NTLM SMB session"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "p95 response time by transaction",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "95th percentile sample time per 5-second window.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"pct95.0\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'all' AND $timeFilter GROUP BY time($__interval), \"transaction\" fill(null)",
+          "alias": "$tag_transaction",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP bind"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP authz (group in chain)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos TGT (AS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos service ticket (TGS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NTLM SMB session"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Mean response time by transaction",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"avg\") FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'all' AND $timeFilter GROUP BY time($__interval), \"transaction\" fill(null)",
+          "alias": "$tag_transaction",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP bind"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP authz (group in chain)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos TGT (AS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos service ticket (TGS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NTLM SMB session"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Errors by transaction",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Failed samples per second.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT sum(\"count\") / 5 FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'ko' AND $timeFilter GROUP BY time(5s), \"transaction\" fill(0)",
+          "alias": "$tag_transaction",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP bind"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LDAP authz (group in chain)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos TGT (AS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kerberos service ticket (TGS)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NTLM SMB session"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Summary",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "Totals for the selected range.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "query": "SELECT sum(\"count\") AS \"Samples\", mean(\"avg\") AS \"Mean ms\", max(\"pct95.0\") AS \"Max p95 ms\", max(\"pct99.0\") AS \"Max p99 ms\", max(\"max\") AS \"Max ms\" FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'all' AND $timeFilter GROUP BY \"transaction\"",
+          "alias": "",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        },
+        {
+          "refId": "B",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "query": "SELECT sum(\"count\") AS \"Errors\" FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"transaction\" != 'all' AND \"transaction\" != 'internal' AND \"statut\" = 'ko' AND $timeFilter GROUP BY \"transaction\"",
+          "alias": "",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "transaction": 0,
+              "Samples": 1,
+              "Errors": 2
+            },
+            "renameByName": {
+              "transaction": "Transaction"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Errors by response code",
+      "type": "table",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-jmeter"
+      },
+      "description": "What went wrong: LDAP result codes, Kerberos/GSS errors and NT_STATUS codes.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "query": "SELECT sum(\"count\") AS \"Count\" FROM \"jmeter\" WHERE \"application\" =~ /^$application$/ AND \"transaction\" =~ /^$transaction$/ AND \"responseCode\" =~ /.+/ AND $timeFilter GROUP BY \"transaction\", \"responseCode\", \"responseMessage\"",
+          "alias": "",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-jmeter"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Domain controller (container)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "title": "DC CPU",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-telegraf"
+      },
+      "description": "CPU of the Samba DC container (100% = one core).",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"usage_percent\") FROM \"docker_container_cpu\" WHERE \"container_name\" =~ /dc1/ AND \"cpu\" = 'cpu-total' AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "alias": "Samba DC",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-telegraf"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "DC memory",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influx-telegraf"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "query": "SELECT mean(\"usage\") FROM \"docker_container_mem\" WHERE \"container_name\" =~ /dc1/ AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "alias": "Samba DC",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influx-telegraf"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

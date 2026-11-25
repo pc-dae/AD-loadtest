@@ -1,0 +1,82 @@
+{{- if .Values.samba.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-dc
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "adlt.selector" (dict "root" . "component" "samba-dc") | nindent 4 }}
+  ports:
+    - { name: kerberos, port: 88, protocol: TCP }
+    - { name: kerberos-udp, port: 88, protocol: UDP }
+    - { name: ldap, port: 389 }
+    - { name: smb, port: 445 }
+    - { name: kpasswd, port: 464 }
+    - { name: ldaps, port: 636 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-dc
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-dc
+  replicas: 1
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "samba-dc") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        {{- include "adlt.selector" (dict "root" . "component" "samba-dc") | nindent 8 }}
+    spec:
+      hostname: {{ .Values.samba.hostname }}
+      containers:
+        - name: samba
+          image: "{{ .Values.samba.image.repository }}:{{ .Values.samba.image.tag }}"
+          imagePullPolicy: {{ .Values.samba.image.pullPolicy }}
+          # Samba stores NT ACLs in security.* xattrs, which need CAP_SYS_ADMIN.
+          securityContext:
+            privileged: true
+          env:
+            - { name: REALM, value: {{ .Values.domain.realm | quote }} }
+            - { name: DOMAIN, value: {{ .Values.domain.netbios | quote }} }
+            - { name: HOST_NAME, value: {{ .Values.samba.hostname | quote }} }
+            - { name: DNS_FORWARDER, value: "8.8.8.8" }
+            - { name: SEED_USERS, value: {{ .Values.users.count | quote }} }
+            - { name: USERS_CSV, value: /var/lib/samba/users.csv }
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: adminPassword } }
+            - name: TEST_USER_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: testUserPassword } }
+            - name: SERVICE_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: testUserPassword } }
+          ports:
+            - { containerPort: 88 }
+            - { containerPort: 389 }
+            - { containerPort: 445 }
+            - { containerPort: 636 }
+          startupProbe:
+            tcpSocket: { port: 636 }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["bash", "-c", "</dev/tcp/127.0.0.1/88 && </dev/tcp/127.0.0.1/636 && </dev/tcp/127.0.0.1/445"]
+            periodSeconds: 10
+          volumeMounts:
+            - { name: samba-lib, mountPath: /var/lib/samba }
+            - { name: samba-etc, mountPath: /etc/samba }
+          resources: {{- toYaml .Values.samba.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata: { name: samba-lib }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "adlt.storageClass" .Values.samba.persistence.storageClass | nindent 8 }}
+        resources: { requests: { storage: {{ .Values.samba.persistence.size }} } }
+    - metadata: { name: samba-etc }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- include "adlt.storageClass" .Values.samba.persistence.storageClass | nindent 8 }}
+        resources: { requests: { storage: 64Mi } }
+{{- end }}

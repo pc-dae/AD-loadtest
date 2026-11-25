@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-controller
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.controller.service.type }}
+  selector: {{- include "adlt.selector" (dict "root" . "component" "controller") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      {{- if and (eq .Values.controller.service.type "NodePort") .Values.controller.service.nodePort }}
+      nodePort: {{ .Values.controller.service.nodePort }}
+      {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-results
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "adlt.storageClass" .Values.controller.persistence.storageClass | nindent 2 }}
+  resources: { requests: { storage: {{ .Values.controller.persistence.size }} } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-controller
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # One JMeter run at a time, and the results volume is ReadWriteOnce.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "controller") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        {{- include "adlt.selector" (dict "root" . "component" "controller") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      initContainers:
+        # Renders the target profile with the service-account password and generates users.csv
+        # with the same scheme the domain was seeded with.
+        - name: prepare
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              for f in /config-src/*; do
+                awk '{ s = $0; t = "@TEST_USER_PASSWORD@"; i = index(s, t);
+                       if (i) s = substr(s, 1, i - 1) ENVIRON["TEST_USER_PASSWORD"] substr(s, i + length(t));
+                       print s }' "$f" > "/config/$(basename "$f")"
+              done
+              if [ -f /users-src/users.csv ]; then
+                cp /users-src/users.csv /data/users.csv
+              else
+                awk -v n="$USER_COUNT" 'BEGIN {
+                  print "username,password,authorised"
+                  for (i = 1; i <= n; i++) printf "ltuser%05d,%s,%s\n", i, ENVIRON["TEST_USER_PASSWORD"], (i % 4 <= 1 ? "true" : "false")
+                }' > /data/users.csv
+              fi
+          env:
+            - { name: USER_COUNT, value: {{ .Values.users.count | quote }} }
+            - name: TEST_USER_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: testUserPassword } }
+          volumeMounts:
+            - { name: config-src, mountPath: /config-src }
+            - { name: config, mountPath: /config }
+            - { name: data, mountPath: /data }
+            {{- if .Values.users.existingConfigMap }}
+            - { name: users-src, mountPath: /users-src }
+            {{- end }}
+      containers:
+        - name: controller
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          command: ["java", "-jar", "/opt/ad-loadtest/controller.jar"]
+          env:
+            - { name: CONFIG_DIR, value: /config }
+            - { name: RESULTS_DIR, value: /results }
+            - { name: PLAN, value: /opt/ad-loadtest/plan/ad-auth.jmx }
+            - { name: KRB5_CONF, value: /config/krb5.conf }
+            - { name: GRAFANA_URL, value: {{ .Values.controller.grafanaUrl | quote }} }
+            - { name: HEAP, value: {{ .Values.controller.heap | quote }} }
+            # For JMeter started with `kubectl exec` (make kind-test), which bypasses the image entrypoint.
+            - { name: JVM_ARGS, value: "-Djava.security.krb5.conf=/config/krb5.conf -Djavax.security.auth.useSubjectCredsOnly=true" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /api/status, port: http }
+            periodSeconds: 10
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: data, mountPath: /data }
+            - { name: results, mountPath: /results }
+          resources: {{- toYaml .Values.controller.resources | nindent 12 }}
+      volumes:
+        - name: config-src
+          configMap: { name: {{ .Release.Name }}-config }
+        - { name: config, emptyDir: {} }
+        - { name: data, emptyDir: {} }
+        - name: results
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-results }
+        {{- if .Values.users.existingConfigMap }}
+        - name: users-src
+          configMap: { name: {{ .Values.users.existingConfigMap }} }
+        {{- end }}

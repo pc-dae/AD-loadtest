@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ad-loadtest
+description: Active Directory LDAP, Kerberos and NTLM load testing with JMeter, a web controller and Grafana
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AD Load Test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>AD load test</span>
+  </div>
+  <div class="topbar-right">
+    <span id="state-pill" class="pill pill-idle" role="status">Idle</span>
+    <a id="grafana-link" class="link" href="#" target="_blank" rel="noopener">Open Grafana ↗</a>
+  </div>
+</header>
+
+<main>
+  <section class="grid">
+    <form id="run-form" class="card" autocomplete="off">
+      <h2>New run</h2>
+
+      <label class="field">
+        <span>Target profile</span>
+        <select name="profile" id="profile"></select>
+      </label>
+
+      <div class="row2">
+        <label class="field">
+          <span>Duration (s)</span>
+          <input name="duration" type="number" min="1" max="86400" value="120" required>
+        </label>
+        <label class="field">
+          <span>Ramp-up (s)</span>
+          <input name="rampup" type="number" min="0" max="3600" value="10" required>
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Threads per protocol</legend>
+        <div class="row3">
+          <label class="field">
+            <span>LDAP</span>
+            <input name="ldapThreads" type="number" min="0" max="5000" value="5" required>
+          </label>
+          <label class="field">
+            <span>Kerberos</span>
+            <input name="kerberosThreads" type="number" min="0" max="5000" value="5" required>
+          </label>
+          <label class="field">
+            <span>NTLM</span>
+            <input name="ntlmThreads" type="number" min="0" max="5000" value="5" required>
+          </label>
+        </div>
+        <p class="hint">0 disables that protocol.</p>
+      </fieldset>
+
+      <div class="row2">
+        <label class="field">
+          <span>Think time (ms)</span>
+          <input name="thinkMs" type="number" min="0" max="60000" value="0" required>
+        </label>
+        <label class="field">
+          <span>Authorisation lookup</span>
+          <select name="authzBindAs">
+            <option value="user">Bind as each user</option>
+            <option value="service">Service account</option>
+          </select>
+        </label>
+      </div>
+
+      <p id="form-error" class="error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button type="submit" id="start-btn" class="btn btn-primary">Start run</button>
+        <button type="button" id="stop-btn" class="btn btn-danger" disabled>Stop</button>
+      </div>
+    </form>
+
+    <section class="card" aria-labelledby="live-title">
+      <div class="card-head">
+        <h2 id="live-title">Live</h2>
+        <span id="run-id" class="muted mono"></span>
+      </div>
+
+      <div class="progress" aria-hidden="true"><div id="progress-bar"></div></div>
+      <p id="progress-text" class="muted small">No run yet. Configure one and press Start.</p>
+
+      <div class="tiles">
+        <div class="tile"><span class="tile-label">Throughput</span><span class="tile-value" id="t-throughput">–</span><span class="tile-unit">req/s</span></div>
+        <div class="tile"><span class="tile-label">Avg response</span><span class="tile-value" id="t-avg">–</span><span class="tile-unit">ms</span></div>
+        <div class="tile"><span class="tile-label">Errors</span><span class="tile-value" id="t-errors">–</span><span class="tile-unit">%</span></div>
+        <div class="tile"><span class="tile-label">Active threads</span><span class="tile-value" id="t-active">–</span><span class="tile-unit">&nbsp;</span></div>
+        <div class="tile"><span class="tile-label">Samples</span><span class="tile-value" id="t-samples">–</span><span class="tile-unit">total</span></div>
+      </div>
+      <p class="muted small">Throughput, response time and active threads come from the latest 5-second JMeter summary; errors and samples cover the whole run.</p>
+
+      <details open>
+        <summary>JMeter console</summary>
+        <pre id="console" class="console" tabindex="0"></pre>
+      </details>
+    </section>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Dashboard</h2>
+      <span class="muted small">Per-transaction detail and DC load from Grafana</span>
+    </div>
+    <iframe id="grafana" title="Grafana dashboard" loading="lazy"></iframe>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Run history</h2>
+      <button type="button" id="refresh-runs" class="btn btn-quiet">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">Source</th>
+            <th scope="col">Profile</th>
+            <th scope="col" class="num">LDAP / Krb / NTLM</th>
+            <th scope="col" class="num">Duration</th>
+            <th scope="col" class="num">Samples</th>
+            <th scope="col" class="num">Req/s</th>
+            <th scope="col" class="num">Errors</th>
+            <th scope="col">Outcome</th>
+            <th scope="col">Report</th>
+          </tr>
+        </thead>
+        <tbody id="runs"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
