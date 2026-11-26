@@ -14,6 +14,7 @@ import org.apache.jmeter.samplers.SampleResult;
 
 import io.github.pcdae.adloadtest.common.Params;
 import io.github.pcdae.adloadtest.common.Results;
+import io.github.pcdae.adloadtest.common.UserProfile;
 
 /**
  * Authentication: obtains a TGT for the test user from the KDC (AS-REQ/AS-REP, including the
@@ -29,6 +30,8 @@ public class KerberosTgtSampler extends AbstractJavaSamplerClient {
         Arguments args = new Arguments();
         args.addArgument("username", "${username}");
         args.addArgument("password", "${password}");
+        args.addArgument("profile", "${profile}");
+        args.addArgument("expect", "${expect}");
         Params.addPropertyBacked(args, "ad.realm", "LAB.LOCAL");
         return args;
     }
@@ -44,15 +47,20 @@ public class KerberosTgtSampler extends AbstractJavaSamplerClient {
         String principal = username.contains("@") ? username : username + "@" + realm;
         char[] password = ctx.getParameter("password").toCharArray();
 
-        SampleResult result = Results.start();
+        UserProfile profile = UserProfile.from(ctx);
+        SampleResult result = profile.start();
         try {
             LoginContext lc = KerberosSupport.login(principal, password);
             result.sampleEnd();
             KerberosSupport.replaceCurrent(lc);
-            return Results.ok(result, "TGT_ISSUED", "TGT issued for " + principal);
+            return profile.accepted(result, "TGT_ISSUED", "TGT issued for " + principal);
         } catch (LoginException e) {
             KerberosSupport.replaceCurrent(null);
-            return Results.fail(result, kdcErrorCode(e), e.getMessage());
+            String code = kdcErrorCode(e);
+            // A KDC error is the directory saying no; anything else (no KDC, timeout) is a test failure.
+            return code.startsWith("KDC_ERR") || code.startsWith("KRB_")
+                    ? profile.rejected(result, code, e.getMessage())
+                    : Results.fail(result, code, e.getMessage());
         } catch (RuntimeException e) {
             KerberosSupport.replaceCurrent(null);
             return Results.fail(result, Results.codeFor(e), e.getMessage());

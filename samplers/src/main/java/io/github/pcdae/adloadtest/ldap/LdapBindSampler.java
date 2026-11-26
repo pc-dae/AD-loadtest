@@ -7,9 +7,11 @@ import org.apache.jmeter.samplers.SampleResult;
 
 import com.unboundid.ldap.sdk.LDAPConnection;
 import com.unboundid.ldap.sdk.LDAPException;
+import com.unboundid.ldap.sdk.ResultCode;
 import com.unboundid.ldap.sdk.SimpleBindRequest;
 
 import io.github.pcdae.adloadtest.common.Results;
+import io.github.pcdae.adloadtest.common.UserProfile;
 
 /**
  * Authentication: opens a fresh connection and performs a simple bind as the test user.
@@ -25,6 +27,8 @@ public class LdapBindSampler extends AbstractJavaSamplerClient {
         Arguments args = new Arguments();
         args.addArgument("username", "${username}");
         args.addArgument("password", "${password}");
+        args.addArgument("profile", "${profile}");
+        args.addArgument("expect", "${expect}");
         LdapSupport.addDefaults(args);
         return args;
     }
@@ -41,13 +45,17 @@ public class LdapBindSampler extends AbstractJavaSamplerClient {
     @Override
     public SampleResult runTest(JavaSamplerContext ctx) {
         String bindName = ldap.bindName(ctx.getParameter("username"));
-        SampleResult result = Results.start();
+        UserProfile profile = UserProfile.from(ctx);
+        SampleResult result = profile.start();
         try (LDAPConnection conn = ldap.connect()) {
             conn.bind(new SimpleBindRequest(bindName, ctx.getParameter("password")));
-            return Results.ok(result, "SUCCESS", "bound as " + bindName);
+            return profile.accepted(result, "SUCCESS", "bound as " + bindName);
         } catch (LDAPException e) {
-            return Results.fail(result, e.getResultCode().getName().toUpperCase().replace(' ', '_'),
-                    e.getDiagnosticMessage() != null ? e.getDiagnosticMessage() : e.getMessage());
+            String code = LdapSupport.code(e);
+            String message = LdapSupport.message(e);
+            return e.getResultCode() == ResultCode.INVALID_CREDENTIALS
+                    ? profile.rejected(result, code, message)
+                    : Results.fail(result, code, message);
         } catch (RuntimeException e) {
             return Results.fail(result, Results.codeFor(e), e.getMessage());
         }

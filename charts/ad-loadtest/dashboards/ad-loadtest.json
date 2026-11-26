@@ -439,8 +439,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP bind"
+              "id": "byRegexp",
+              "options": "^LDAP bind( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -454,8 +454,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP authz (group in chain)"
+              "id": "byRegexp",
+              "options": "^LDAP authz \\(group in chain\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -469,8 +469,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos TGT (AS)"
+              "id": "byRegexp",
+              "options": "^Kerberos TGT \\(AS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -484,8 +484,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos service ticket (TGS)"
+              "id": "byRegexp",
+              "options": "^Kerberos service ticket \\(TGS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -499,8 +499,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "NTLM SMB session"
+              "id": "byRegexp",
+              "options": "^NTLM SMB session( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -508,6 +508,78 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[heavy\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    6
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[deep\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[disabled\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[expired\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
                 }
               }
             ]
@@ -571,8 +643,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP bind"
+              "id": "byRegexp",
+              "options": "^LDAP bind( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -586,8 +658,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP authz (group in chain)"
+              "id": "byRegexp",
+              "options": "^LDAP authz \\(group in chain\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -601,8 +673,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos TGT (AS)"
+              "id": "byRegexp",
+              "options": "^Kerberos TGT \\(AS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -616,8 +688,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos service ticket (TGS)"
+              "id": "byRegexp",
+              "options": "^Kerberos service ticket \\(TGS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -631,8 +703,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "NTLM SMB session"
+              "id": "byRegexp",
+              "options": "^NTLM SMB session( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -640,6 +712,78 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[heavy\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    6
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[deep\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[disabled\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[expired\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
                 }
               }
             ]
@@ -703,8 +847,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP bind"
+              "id": "byRegexp",
+              "options": "^LDAP bind( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -718,8 +862,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP authz (group in chain)"
+              "id": "byRegexp",
+              "options": "^LDAP authz \\(group in chain\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -733,8 +877,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos TGT (AS)"
+              "id": "byRegexp",
+              "options": "^Kerberos TGT \\(AS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -748,8 +892,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos service ticket (TGS)"
+              "id": "byRegexp",
+              "options": "^Kerberos service ticket \\(TGS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -763,8 +907,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "NTLM SMB session"
+              "id": "byRegexp",
+              "options": "^NTLM SMB session( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -772,6 +916,78 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[heavy\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    6
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[deep\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[disabled\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[expired\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
                 }
               }
             ]
@@ -835,8 +1051,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP bind"
+              "id": "byRegexp",
+              "options": "^LDAP bind( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -850,8 +1066,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "LDAP authz (group in chain)"
+              "id": "byRegexp",
+              "options": "^LDAP authz \\(group in chain\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -865,8 +1081,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos TGT (AS)"
+              "id": "byRegexp",
+              "options": "^Kerberos TGT \\(AS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -880,8 +1096,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Kerberos service ticket (TGS)"
+              "id": "byRegexp",
+              "options": "^Kerberos service ticket \\(TGS\\)( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -895,8 +1111,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "NTLM SMB session"
+              "id": "byRegexp",
+              "options": "^NTLM SMB session( \\[.*\\])?$"
             },
             "properties": [
               {
@@ -904,6 +1120,78 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[heavy\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    6
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[deep\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[disabled\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* \\[expired\\]$"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    1,
+                    3
+                  ]
                 }
               }
             ]

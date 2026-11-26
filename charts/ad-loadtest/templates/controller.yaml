@@ -62,9 +62,17 @@ spec:
               if [ -f /users-src/users.csv ]; then
                 cp /users-src/users.csv /data/users.csv
               else
+                # Same scheme as docker/samba-dc/seed-users.py and infra/aws/ad/dc1.ps1.tftpl
                 awk -v n="$USER_COUNT" 'BEGIN {
-                  print "username,password,authorised"
-                  for (i = 1; i <= n; i++) printf "ltuser%05d,%s,%s\n", i, ENVIRON["TEST_USER_PASSWORD"], (i % 4 <= 1 ? "true" : "false")
+                  print "username,password,authorised,profile,expect"
+                  for (i = 1; i <= n; i++) {
+                    inchain = (i % 4 == 0 || i % 8 == 1 || i % 8 == 5)
+                    disabled = (i % 50 == 3); expired = (i % 50 == 7)
+                    if (disabled) p = "disabled"; else if (expired) p = "expired"; else if (i % 10 == 0) p = "heavy"
+                    else if (i % 8 == 5) p = "deep"; else if (i % 8 == 1) p = "nested"; else p = "standard"
+                    printf "ltuser%05d,%s,%s,%s,%s\n", i, ENVIRON["TEST_USER_PASSWORD"],
+                      (inchain && !disabled && !expired ? "true" : "false"), p, (disabled || expired ? "fail" : "ok")
+                  }
                 }' > /data/users.csv
               fi
           env:
@@ -90,7 +98,7 @@ spec:
             - { name: KRB5_CONF, value: /config/krb5.conf }
             - { name: GRAFANA_URL, value: {{ .Values.controller.grafanaUrl | quote }} }
             - { name: HEAP, value: {{ .Values.controller.heap | quote }} }
-            # For JMeter started with `kubectl exec` (make kind-test), which bypasses the image entrypoint.
+            # For JMeter started with `kubectl exec`, which bypasses the image entrypoint.
             - { name: JVM_ARGS, value: "-Djava.security.krb5.conf=/config/krb5.conf -Djavax.security.auth.useSubjectCredsOnly=true" }
           ports:
             - { name: http, containerPort: 8080 }

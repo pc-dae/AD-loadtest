@@ -44,6 +44,8 @@ spec:
             - { name: HOST_NAME, value: {{ .Values.samba.hostname | quote }} }
             - { name: DNS_FORWARDER, value: "8.8.8.8" }
             - { name: SEED_USERS, value: {{ .Values.users.count | quote }} }
+            - { name: ROLE_GROUPS, value: {{ .Values.users.roleGroups | quote }} }
+            - { name: NEST_DEPTH, value: {{ .Values.users.nestDepth | quote }} }
             - { name: USERS_CSV, value: /var/lib/samba/users.csv }
             - name: ADMIN_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: adminPassword } }

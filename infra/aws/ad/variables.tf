@@ -47,6 +47,22 @@ variable "user_count" {
   default     = 500
 }
 
+variable "role_groups" {
+  description = "Extra LT-Role-nnn groups each \"heavy\" user (every 10th) is in; must match the chart's users.roleGroups"
+  type        = number
+  default     = 200
+}
+
+variable "nest_depth" {
+  description = "Depth of the LT-Nest-nn chain the \"deep\" users authorise through; must match the chart's users.nestDepth"
+  type        = number
+  default     = 8
+  validation {
+    condition     = var.nest_depth >= 1
+    error_message = "nest_depth must be at least 1."
+  }
+}
+
 variable "dc_ip_offset" {
   description = "Host number of each DC's fixed private IP in its subnet, e.g. 10 gives 10.0.0.10 in the default EKS VPC"
   type        = number

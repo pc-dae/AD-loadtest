@@ -10,12 +10,8 @@ RUN_ID           ?= $(shell date +%Y%m%d-%H%M%S)
 EXTRA            ?=
 
 COMPOSE := docker compose
-KIND_CLUSTER ?= ad-loadtest
-NAMESPACE    ?= ad-loadtest
-RELEASE      ?= ad-loadtest
-KUBECTL      := kubectl --context kind-$(KIND_CLUSTER) -n $(NAMESPACE)
 
-.PHONY: build up ui test smoke dashboard logs down clean images images-push kind-up kind-deploy kind-test kind-ui kind-down
+.PHONY: build up ui test smoke dashboard logs down clean images images-push
 
 build: ## Build the samplers and controller locally (the Docker image also builds them)
 	mvn -B -q package
@@ -55,10 +51,11 @@ clean: ## Stop the lab and delete the domain, metrics and results
 	rm -rf data results target
 
 # ---------------------------------------------------------------------------
-# kind: the same stack deployed by the Helm chart into a local Kubernetes cluster
+# Images for Kubernetes. kind and EKS clusters are created and managed by mac-k8s from the
+# pc-dae-gitops/aws-ad-loadtest config repository, which deploys charts/ad-loadtest from here.
 # ---------------------------------------------------------------------------
 
-images: ## Build the Samba DC and JMeter/controller images (tag :dev)
+images: ## Build the Samba DC and JMeter/controller images locally (tag :dev)
 	$(COMPOSE) build dc1 controller
 
 REGISTRY  ?= paulcarltondae
@@ -68,26 +65,3 @@ PLATFORMS ?= linux/arm64,linux/amd64
 images-push: ## Build multi-arch images and push to Docker Hub: make images-push TAG=0.1.0
 	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/ad-loadtest-samba-dc:$(TAG) --push docker/samba-dc
 	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/ad-loadtest-jmeter:$(TAG) -f docker/jmeter/Dockerfile --push .
-
-kind-up: images ## Create the kind cluster (if needed), load images and deploy the chart
-	@kind get clusters | grep -qx $(KIND_CLUSTER) || kind create cluster --config kind/cluster.yaml
-	kind load docker-image --name $(KIND_CLUSTER) ad-loadtest-samba-dc:dev ad-loadtest-jmeter:dev
-	$(MAKE) kind-deploy
-	@echo "Web UI: http://localhost:18080  Grafana: http://localhost:13000/d/ad-loadtest"
-
-kind-deploy: ## (Re)deploy the Helm chart to the kind cluster
-	helm upgrade --install $(RELEASE) charts/ad-loadtest --kube-context kind-$(KIND_CLUSTER) \
-	  -n $(NAMESPACE) --create-namespace -f charts/ad-loadtest/values-kind.yaml --wait --timeout 10m
-
-kind-test: ## Command-line run inside the kind cluster (same variables as `make test`)
-	$(KUBECTL) exec deploy/$(RELEASE)-controller -- jmeter -n -t /opt/ad-loadtest/plan/ad-auth.jmx \
-	  -q /config/$(RELEASE).properties -Jduration=$(DURATION) -Jrampup=$(RAMPUP) \
-	  -Jldap.threads=$(LDAP_THREADS) -Jkerberos.threads=$(KERBEROS_THREADS) -Jntlm.threads=$(NTLM_THREADS) $(EXTRA) \
-	  -Jsummariser.interval=5 -l /results/$(RUN_ID)/results.jtl -j /results/$(RUN_ID)/jmeter.log -e -o /results/$(RUN_ID)/report
-	@echo "Report: http://localhost:18080/results/$(RUN_ID)/report/index.html"
-
-kind-ui: ## Open the web front end running in kind
-	open http://localhost:18080
-
-kind-down: ## Delete the kind cluster
-	kind delete cluster --name $(KIND_CLUSTER)

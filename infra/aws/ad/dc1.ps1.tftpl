@@ -2,9 +2,12 @@
 # First domain controller: creates the forest, installs an enterprise CA so domain controllers
 # auto-enrol for the certificate LDAPS needs, and seeds the load-test users with the same scheme as
 # the Samba lab (docker/samba-dc/seed-users.py) and the chart's users CSV:
-#   i % 4 == 0  member of LT-Authorised
-#   i % 4 == 1  member of LT-Authorised-Nested, itself a member of LT-Authorised
-#   otherwise   member of LT-Denied
+#   i % 4 == 0   member of LT-Authorised
+#   i % 8 == 1   member of LT-Authorised-Nested, itself a member of LT-Authorised
+#   i % 8 == 5   member of LT-Nest-01, a chain of NestDepth groups ending in LT-Authorised
+#   otherwise    member of LT-Denied
+#   i % 10 == 0  also in RoleGroups LT-Role-nnn groups ("heavy": large Kerberos tickets)
+#   i % 50 == 3  disabled; i % 50 == 7 expired
 # EC2Launch runs this at every boot (persist below); each run carries on after the last reboot.
 # Progress is logged to C:\ad-loadtest-setup.log.
 $ErrorActionPreference = 'Stop'
@@ -16,6 +19,8 @@ $Netbios = '${netbios_name}'
 $AdminPassword = ConvertTo-SecureString '${admin_password}' -AsPlainText -Force
 $UserPassword = ConvertTo-SecureString '${test_user_password}' -AsPlainText -Force
 $UserCount = ${user_count}
+$RoleGroups = ${role_groups}
+$NestDepth = ${nest_depth}
 $SeededMarker = 'C:\ad-loadtest-seeded.txt'
 
 if ($env:COMPUTERNAME -ne $ComputerName) {
@@ -56,37 +61,53 @@ certutil -pulse | Out-Null
 Set-ADDefaultDomainPasswordPolicy -Identity $DomainName -LockoutThreshold 0 -MaxPasswordAge 0 `
     -MinPasswordAge 0 -PasswordHistoryCount 0 -ComplexityEnabled $false
 
-foreach ($group in 'LT-Authorised', 'LT-Authorised-Nested', 'LT-Denied') {
+$nestGroups = @(1..$NestDepth | ForEach-Object { 'LT-Nest-{0:D2}' -f $_ })
+$roleGroupNames = @(if ($RoleGroups -gt 0) { 1..$RoleGroups | ForEach-Object { 'LT-Role-{0:D3}' -f $_ } })
+foreach ($group in @('LT-Authorised', 'LT-Authorised-Nested', 'LT-Denied') + $nestGroups + $roleGroupNames) {
     if (-not (Get-ADGroup -Filter "Name -eq '$group'")) {
         New-ADGroup -Name $group -GroupScope Global -Path $UsersOu
     }
 }
-if (-not (Get-ADGroupMember -Identity 'LT-Authorised' | Where-Object Name -eq 'LT-Authorised-Nested')) {
-    Add-ADGroupMember -Identity 'LT-Authorised' -Members 'LT-Authorised-Nested'
+
+function Add-Members([string] $Group, [string[]] $Names) {
+    $existing = @(Get-ADGroupMember -Identity $Group | Select-Object -ExpandProperty SamAccountName)
+    $missing = @($Names | Where-Object { $existing -notcontains $_ })
+    if ($missing.Count -gt 0) { Add-ADGroupMember -Identity $Group -Members $missing }
 }
 
-function New-LoadTestUser([string] $Sam) {
+Add-Members 'LT-Authorised' @('LT-Authorised-Nested')
+# LT-Nest-01 is in LT-Nest-02 ... and the last one is in LT-Authorised.
+$outerGroups = @($nestGroups | Select-Object -Skip 1) + 'LT-Authorised'
+for ($d = 0; $d -lt $nestGroups.Count; $d++) { Add-Members $outerGroups[$d] @($nestGroups[$d]) }
+
+function New-LoadTestUser([string] $Sam, [bool] $Enabled = $true) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$Sam'")) {
         New-ADUser -Name $Sam -SamAccountName $Sam -UserPrincipalName "$Sam@$DomainName" -Path $UsersOu `
-            -AccountPassword $UserPassword -Enabled $true -PasswordNeverExpires $true
+            -AccountPassword $UserPassword -Enabled $Enabled -PasswordNeverExpires $true
     }
 }
 
 New-LoadTestUser 'svc-ltapp'
-$members = @{ 'LT-Authorised' = @(); 'LT-Authorised-Nested' = @(); 'LT-Denied' = @() }
+$members = @{}
+$heavy = @()
 for ($i = 1; $i -le $UserCount; $i++) {
     $sam = 'ltuser{0:D5}' -f $i
-    New-LoadTestUser $sam
-    $group = switch ($i % 4) { 0 { 'LT-Authorised' } 1 { 'LT-Authorised-Nested' } default { 'LT-Denied' } }
+    New-LoadTestUser $sam -Enabled ($i % 50 -ne 3)
+    if ($i % 50 -eq 7) { Set-ADAccountExpiration -Identity $sam -DateTime '2020-01-01' }
+    if ($i % 4 -eq 0) { $group = 'LT-Authorised' }
+    elseif ($i % 8 -eq 1) { $group = 'LT-Authorised-Nested' }
+    elseif ($i % 8 -eq 5) { $group = 'LT-Nest-01' }
+    else { $group = 'LT-Denied' }
+    if (-not $members.ContainsKey($group)) { $members[$group] = @() }
     $members[$group] += $sam
+    if ($i % 10 -eq 0) { $heavy += $sam }
 }
-foreach ($group in $members.Keys) {
-    $existing = @(Get-ADGroupMember -Identity $group | Select-Object -ExpandProperty SamAccountName)
-    $missing = @($members[$group] | Where-Object { $existing -notcontains $_ })
-    if ($missing.Count -gt 0) { Add-ADGroupMember -Identity $group -Members $missing }
+foreach ($group in $members.Keys) { Add-Members $group $members[$group] }
+if ($heavy.Count -gt 0) {
+    foreach ($group in $roleGroupNames) { Add-Members $group $heavy }
 }
 
-Set-Content -Path $SeededMarker -Value "Seeded $UserCount users $(Get-Date -Format o)"
+Set-Content -Path $SeededMarker -Value "Seeded $UserCount users, $($heavy.Count) in $RoleGroups role groups, nesting $NestDepth deep $(Get-Date -Format o)"
 Write-Output "Domain $DomainName ready with $UserCount load-test users"
 Stop-Transcript
 </powershell>

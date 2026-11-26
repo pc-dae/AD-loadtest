@@ -10,7 +10,7 @@ It runs in three ways, all from the same images and test plan:
 | Mode | Domain controller | Use it for |
 |---|---|---|
 | **Docker Compose** (`make up`) | Samba 4 AD DC container | Fastest local loop, no cluster |
-| **kind + Helm** (`make kind-up`) | Samba 4 AD DC pod | Local Kubernetes, same chart that later runs on EKS |
+| **kind** (via [aws-ad-loadtest](https://github.com/pc-dae-gitops/aws-ad-loadtest) and mac-k8s `setup.sh --kind`) | Samba 4 AD DC pod | Local Kubernetes with Flux, the same chart that runs on EKS |
 | **AWS** (via [aws-ad-loadtest](https://github.com/pc-dae-gitops/aws-ad-loadtest)) | Windows Server DCs on EC2 | Real numbers; ephemeral, spun up and torn down per session |
 
 ## What it measures
@@ -101,20 +101,16 @@ Each run writes `results/<run id>/results.jtl`, `jmeter.log` and a JMeter HTML r
 
 Setting a protocol's threads to `0` disables it, for example `make test NTLM_THREADS=0`.
 
-## Running in kind
+## Running in Kubernetes
 
-Prerequisites: Docker, `kind`, `helm` and `kubectl`.
+Clusters aren't created from this repository. mac-k8s creates them, driven by the config repository [pc-dae-gitops/aws-ad-loadtest](https://github.com/pc-dae-gitops/aws-ad-loadtest):
 
-```bash
-make kind-up      # create cluster "ad-loadtest", build + load images, helm install (Samba DC included)
-make kind-ui      # web front end, http://localhost:18080
-                  # Grafana:       http://localhost:13000/d/ad-loadtest
-make kind-test DURATION=60 LDAP_THREADS=10   # command-line run inside the cluster
-make kind-deploy  # re-apply the chart after changes
-make kind-down    # delete the cluster
-```
+- `setup.sh --kind` creates a kind cluster.
+- Flux's apps ResourceSet deploys `charts/ad-loadtest` from this repository's `main` branch, using the published images (`make images-push TAG=…`).
+- `deploy-apps.sh` writes the app's secrets to Vault.
+- `setup.sh --kind --target eks` adds the AWS target.
 
-The kind ports are deliberately different from Docker Compose's, so both can run side by side.
+See that repository's README.
 
 ### Helm chart
 
@@ -134,9 +130,9 @@ Key values:
 | `domain.*` | `LAB.LOCAL` lab domain | Realm, NetBIOS name, UPN suffix, base DN, authorisation group, SPN |
 | `secrets.existingSecret` | lab passwords | Secret with `adminPassword` and `testUserPassword` |
 | `users.count` / `users.existingConfigMap` | `500` | Generated users CSV (same scheme as the seeding), or bring your own |
-| `controller.grafanaUrl` | `http://localhost:13000` | Browser-facing Grafana URL for the embedded dashboard |
+| `controller.grafanaUrl` | `http://localhost:3000` | Browser-facing Grafana URL for the embedded dashboard |
 
-`values-kind.yaml` adds the NodePorts for kind. The chart is laid out to become an entry in a mac-k8s/Flux `apps.yaml`.
+The chart is deployed as an entry in the config repository's `apps.yaml`. See `local-cluster` and `target-cluster` there for the kind and EKS values.
 
 ## Configuration
 
@@ -155,11 +151,25 @@ Shared settings live in [`jmeter/lab.properties`](jmeter/lab.properties). Each s
 
 ### Test users
 
-On first start the DC creates `ltuser00001` to `ltuser00500` (`SEED_USERS` changes the count) and writes `data/users.csv`:
+Every directory is seeded with the same deterministic scheme, and the users CSV is generated with it too, so every sample knows its expected outcome. That covers the Samba lab, the Windows DCs in AWS (`infra/aws/ad/dc1.ps1.tftpl`) and the chart's CSV generator. For user `ltuserNNNNN`, numbered `i`:
 
-- a quarter are direct members of `LT-Authorised`
-- a quarter are in `LT-Authorised-Nested`, which is itself a member of `LT-Authorised`, to exercise in-chain lookups
-- half are in `LT-Denied` only
+| Profile | Users (i) | Directory setup | Expected |
+|---|---|---|---|
+| standard | rest | `LT-Authorised` (i % 4 = 0) or `LT-Denied` | Logins succeed; authorised only in `LT-Authorised` |
+| nested | i % 8 = 1 | `LT-Authorised-Nested`, one level inside `LT-Authorised` | Authorised |
+| **deep** | i % 8 = 5 | `LT-Nest-01`, a chain of `nestDepth` (8) groups ending in `LT-Authorised` | Authorised; stresses nested lookups |
+| **heavy** | i % 10 = 0 | Also in `roleGroups` (200) `LT-Role-nnn` groups | Logins succeed; large Kerberos tickets and token expansion |
+| **disabled** | i % 50 = 3 | Account disabled | Logins **rejected** (counted as a pass); never authorised |
+| **expired** | i % 50 = 7 | Account expired in 2020 | Logins **rejected** (counted as a pass); never authorised |
+
+With 500 users that gives 315 standard, 58 nested, 57 deep, 50 heavy, 10 disabled and 10 expired users, 240 of them authorised.
+
+The users CSV has the columns `username,password,authorised,profile,expect`:
+- A rejected login is a pass when `expect` is `fail`, and an accepted one is a failure (`UNEXPECTED_SUCCESS`).
+- Authorisation means being in the group (directly or nested) **and** enabled **and** not expired, the same check an application should make.
+- Samples for the four bold profiles are labelled separately, e.g. `LDAP bind [heavy]`, so the dashboard shows their effect. They keep their test's colour, with a dashed or dotted line for the profile. Set `label.byProfile=false` to merge them.
+
+Change the sizes with `SEED_USERS`, `ROLE_GROUPS` and `NEST_DEPTH` (Compose), `users.count`, `users.roleGroups` and `users.nestDepth` (chart), or `ad_user_count`, `ad_role_groups` and `ad_nest_depth` (AWS).
 
 Lockout, password expiry and complexity are disabled in the lab domain. Lab passwords default to the values in `docker-compose.yml` and can be overridden with `ADMIN_PASSWORD` and `TEST_USER_PASSWORD`. **They are for a throwaway lab only.**
 
@@ -189,8 +199,7 @@ jmeter/ad-auth.jmx                         Test plan
 jmeter/lab.properties, krb5.conf           Target configuration
 docker/samba-dc/                           Samba AD DC image, provisioning and user seeding
 docker/jmeter/                             JMeter 5.6.3 image (multi-stage; builds samplers + controller; used by both)
-charts/ad-loadtest/                        Helm chart (kind now, EKS later); dashboards/ holds the Grafana dashboard
-kind/cluster.yaml                          Local kind cluster with NodePort mappings (standalone, without Flux)
+charts/ad-loadtest/                        Helm chart deployed by aws-ad-loadtest (kind and EKS); dashboards/ holds the Grafana dashboard
 infra/aws/ad/                              Terraform: Windows Server domain controllers in the EKS VPC
 infra/aws/flux/                            tofu-controller Terraform object and secret copy, applied from aws-ad-loadtest
 bin/                                       aws-status.sh, aws-teardown.sh
@@ -203,7 +212,7 @@ docker/grafana/, docker/telegraf/          Compose-mode Grafana provisioning and
 - **A single DC on a laptop saturates early.** About 450 samples/s on an 8-core MacBook, with latency rising as threads are added beyond that. Load generator and DC also share the same CPU.
 - **No DC metrics on AWS yet.** Collecting Windows performance counters (LDAP, Kerberos, NTLM, LSASS) needs an agent on the DCs that can reach InfluxDB, which isn't built yet.
 - **The load generators target DC1 only.** DC2 provides replication and failover but isn't load-tested directly.
-- **No DC metrics in kind.** The DC CPU and memory panels rely on Telegraf reading Docker, so they only populate in the Compose mode.
+- **No DC metrics in Kubernetes.** The DC CPU and memory panels rely on Telegraf reading Docker, so they only populate in the Compose mode.
 - **NTLM is tested over SMB**, not HTTP. Application-level NTLM/Negotiate to IIS arrives with phase 2.
 - **LDAP binds are simple binds over TLS.** SASL/GSSAPI (Kerberos-authenticated LDAP) binds are not yet implemented.
 

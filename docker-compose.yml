@@ -19,6 +19,8 @@ services:
       REALM: LAB.LOCAL
       DOMAIN: LAB
       SEED_USERS: ${SEED_USERS:-500}
+      ROLE_GROUPS: ${ROLE_GROUPS:-200}
+      NEST_DEPTH: ${NEST_DEPTH:-8}
     volumes:
       - samba-lib:/var/lib/samba
       - samba-etc:/etc/samba

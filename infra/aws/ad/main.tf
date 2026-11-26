@@ -105,6 +105,8 @@ resource "aws_instance" "dc" {
     admin_password     = random_password.admin.result
     test_user_password = random_password.test_user.result
     user_count         = var.user_count
+    role_groups        = var.role_groups
+    nest_depth         = var.nest_depth
     dc1_ip             = local.dc_ips[0]
   })
 

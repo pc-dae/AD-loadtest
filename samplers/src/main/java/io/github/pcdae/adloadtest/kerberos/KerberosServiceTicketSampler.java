@@ -18,6 +18,7 @@ import org.ietf.jgss.Oid;
 
 import io.github.pcdae.adloadtest.common.Params;
 import io.github.pcdae.adloadtest.common.Results;
+import io.github.pcdae.adloadtest.common.UserProfile;
 
 /**
  * Authorisation to a service: uses the thread's TGT to request a service ticket (TGS-REQ/TGS-REP)
@@ -44,6 +45,8 @@ public class KerberosServiceTicketSampler extends AbstractJavaSamplerClient {
     @Override
     public Arguments getDefaultParameters() {
         Arguments args = new Arguments();
+        args.addArgument("profile", "${profile}");
+        args.addArgument("expect", "${expect}");
         Params.addPropertyBacked(args, "kerberos.spn", "ldap@dc1.lab.local");
         return args;
     }
@@ -55,17 +58,19 @@ public class KerberosServiceTicketSampler extends AbstractJavaSamplerClient {
 
     @Override
     public SampleResult runTest(JavaSamplerContext ctx) {
-        SampleResult result = Results.start();
+        UserProfile profile = UserProfile.from(ctx);
+        SampleResult result = profile.start();
         LoginContext lc = KerberosSupport.current();
         if (lc == null) {
-            return Results.fail(result, "NO_TGT", "No TGT on this thread; run the Kerberos TGT sampler first");
+            // Expected when the KDC rightly refused this iteration's (disabled or expired) user a TGT.
+            return profile.rejected(result, "NO_TGT", "No TGT on this thread; the Kerberos TGT sampler did not get one");
         }
         Subject subject = lc.getSubject();
         subject.getPrivateCredentials(KerberosTicket.class)
                 .removeIf(t -> !t.getServer().getName().startsWith("krbtgt/"));
         try {
             int tokenLength = Subject.callAs(subject, this::initContext);
-            return Results.ok(result, "TICKET_ISSUED", "service ticket for " + spn + " (AP-REQ " + tokenLength + " bytes)");
+            return profile.accepted(result, "TICKET_ISSUED", "service ticket for " + spn + " (AP-REQ " + tokenLength + " bytes)");
         } catch (CompletionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             String code = cause instanceof GSSException g ? "GSS_" + g.getMajorString().toUpperCase().replace(' ', '_')

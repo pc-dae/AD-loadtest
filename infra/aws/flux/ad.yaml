@@ -40,6 +40,10 @@ spec:
       value: "${ad_instance_type:=t3.medium}"
     - name: user_count
       value: ${ad_user_count:=500}
+    - name: role_groups
+      value: ${ad_role_groups:=200}
+    - name: nest_depth
+      value: ${ad_nest_depth:=8}
   # The chart's passwords, copied to the app's namespace by secrets.yaml; the IPs for bin/aws-status.sh
   writeOutputsToSecret:
     name: ad-loadtest-ad-outputs

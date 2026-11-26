@@ -72,6 +72,14 @@ final class LdapSupport {
         return new LDAPConnection(socketFactory, options, host, port);
     }
 
+    static String code(LDAPException e) {
+        return e.getResultCode().getName().toUpperCase().replace(' ', '_');
+    }
+
+    static String message(LDAPException e) {
+        return e.getDiagnosticMessage() != null ? e.getDiagnosticMessage() : e.getMessage();
+    }
+
     /** Accepts a bare sAMAccountName, a UPN or a DN and returns something AD will bind with. */
     String bindName(String username) {
         if (username.contains("@") || username.contains("=") || username.contains("\\")) {

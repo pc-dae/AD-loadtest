@@ -1,6 +1,0 @@
-# Local kind cluster (see kind/cluster.yaml): NodePorts mapped to the Mac's loopback.
-controller:
-  grafanaUrl: http://localhost:13000
-  service: { type: NodePort, nodePort: 30080 }
-grafana:
-  service: { type: NodePort, nodePort: 30300 }

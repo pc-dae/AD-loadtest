@@ -13,7 +13,7 @@
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test users" enabled="true">
         <stringProp name="filename">${__P(users.csv,users.csv)}</stringProp>
         <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">username,password,authorised</stringProp>
+        <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
         <boolProp name="ignoreFirstLine">true</boolProp>
         <stringProp name="delimiter">,</stringProp>
         <boolProp name="quotedData">false</boolProp>
@@ -49,6 +49,16 @@
               <stringProp name="Argument.value">${password}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
           </collectionProp>
         </elementProp>
           <stringProp name="classname">io.github.pcdae.adloadtest.ldap.LdapBindSampler</stringProp>
@@ -65,6 +75,16 @@
             <elementProp name="password" elementType="Argument">
               <stringProp name="Argument.name">password</stringProp>
               <stringProp name="Argument.value">${password}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
             <elementProp name="authorised" elementType="Argument">
@@ -109,6 +129,16 @@
               <stringProp name="Argument.value">${password}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
           </collectionProp>
         </elementProp>
           <stringProp name="classname">io.github.pcdae.adloadtest.kerberos.KerberosTgtSampler</stringProp>
@@ -117,6 +147,16 @@
         <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Kerberos service ticket (TGS)" enabled="true">
         <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
           <collectionProp name="Arguments.arguments">
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
           </collectionProp>
         </elementProp>
           <stringProp name="classname">io.github.pcdae.adloadtest.kerberos.KerberosServiceTicketSampler</stringProp>
@@ -152,6 +192,16 @@
             <elementProp name="password" elementType="Argument">
               <stringProp name="Argument.name">password</stringProp>
               <stringProp name="Argument.value">${password}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
           </collectionProp>

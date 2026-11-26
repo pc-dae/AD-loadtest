@@ -25,11 +25,18 @@ secrets:
   adminPassword: Adm1n-LoadTest!
   testUserPassword: LoadTest-Passw0rd
 
-# Test users: ltuser00001..N, a quarter direct members of LT-Authorised, a quarter nested,
-# half denied. The users CSV is generated with the same scheme, so it matches whatever
-# seeded the domain (the Samba DC here, or the PowerShell seeding for Windows DCs).
+# Test users ltuser00001..N, seeded with one scheme by the Samba DC here, the PowerShell seeding
+# for Windows DCs and this chart's users CSV, so expectations always match the directory:
+#   i % 4 == 0  LT-Authorised            i % 8 == 1  nested one level ("nested")
+#   i % 8 == 5  nested nestDepth deep    otherwise   LT-Denied
+#   i % 10 == 0 also in roleGroups LT-Role-nnn groups ("heavy": large Kerberos tickets)
+#   i % 50 == 3 disabled, i % 50 == 7 expired: logins are expected to be rejected
 users:
   count: 500
+  # Extra groups each "heavy" user is in, and the depth of the "deep" nesting chain. Only used
+  # when the chart seeds the Samba DC; set the same values for Windows DCs in Terraform.
+  roleGroups: 200
+  nestDepth: 8
   # Supply your own users.csv (key users.csv) instead of generating one.
   existingConfigMap: ""
 
@@ -51,7 +58,7 @@ controller:
     tag: dev
     pullPolicy: IfNotPresent
   # URL the browser uses to reach Grafana, for the embedded dashboard.
-  grafanaUrl: http://localhost:13000
+  grafanaUrl: http://localhost:3000
   heap: "-Xms512m -Xmx2g"
   service:
     type: ClusterIP

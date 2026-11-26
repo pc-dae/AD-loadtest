@@ -1,6 +1,7 @@
 package io.github.pcdae.adloadtest.ntlm;
 
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.java.sampler.AbstractJavaSamplerClient;
@@ -9,12 +10,14 @@ import org.apache.jmeter.samplers.SampleResult;
 
 import io.github.pcdae.adloadtest.common.Params;
 import io.github.pcdae.adloadtest.common.Results;
+import io.github.pcdae.adloadtest.common.UserProfile;
 import jcifs.CIFSContext;
 import jcifs.CIFSException;
 import jcifs.config.PropertyConfiguration;
 import jcifs.context.BaseContext;
 import jcifs.smb.NtlmPasswordAuthenticator;
 import jcifs.smb.SmbAuthException;
+import jcifs.smb.SmbException;
 import jcifs.smb.SmbFile;
 
 /**
@@ -27,6 +30,20 @@ import jcifs.smb.SmbFile;
  */
 public class NtlmSmbSampler extends AbstractJavaSamplerClient {
 
+    /** NT status codes meaning the DC refused the logon, as opposed to a protocol or network error. */
+    private static final Set<Integer> LOGON_REJECTED = Set.of(
+            0xC000006D, // LOGON_FAILURE
+            0xC000006A, // WRONG_PASSWORD
+            0xC0000064, // NO_SUCH_USER
+            0xC000006E, // ACCOUNT_RESTRICTION
+            0xC000006F, // INVALID_LOGON_HOURS
+            0xC0000070, // INVALID_WORKSTATION
+            0xC0000071, // PASSWORD_EXPIRED
+            0xC0000072, // ACCOUNT_DISABLED
+            0xC0000193, // ACCOUNT_EXPIRED
+            0xC0000224, // PASSWORD_MUST_CHANGE
+            0xC0000234); // ACCOUNT_LOCKED_OUT
+
     private PropertyConfiguration config;
     private String url;
     private String domain;
@@ -36,6 +53,8 @@ public class NtlmSmbSampler extends AbstractJavaSamplerClient {
         Arguments args = new Arguments();
         args.addArgument("username", "${username}");
         args.addArgument("password", "${password}");
+        args.addArgument("profile", "${profile}");
+        args.addArgument("expect", "${expect}");
         Params.addPropertyBacked(args, "ad.host", "dc1.lab.local");
         Params.addPropertyBacked(args, "ad.domain", "LAB");
         Params.addPropertyBacked(args, "smb.share", "netlogon");
@@ -68,16 +87,21 @@ public class NtlmSmbSampler extends AbstractJavaSamplerClient {
     public SampleResult runTest(JavaSamplerContext ctx) {
         String username = ctx.getParameter("username");
         String password = ctx.getParameter("password");
-        SampleResult result = Results.start();
+        UserProfile profile = UserProfile.from(ctx);
+        SampleResult result = profile.start();
         BaseContext base = new BaseContext(config);
         try {
             CIFSContext auth = base.withCredentials(new NtlmPasswordAuthenticator(domain, username, password));
             try (SmbFile share = new SmbFile(url, auth)) {
                 share.list();
             }
-            return Results.ok(result, "SUCCESS", "NTLM session for " + domain + "\\" + username);
-        } catch (SmbAuthException e) {
-            return Results.fail(result, "NT_STATUS_" + Integer.toHexString(e.getNtStatus()).toUpperCase(), e.getMessage());
+            return profile.accepted(result, "SUCCESS", "NTLM session for " + domain + "\\" + username);
+        } catch (SmbException e) {
+            String code = "NT_STATUS_" + Integer.toHexString(e.getNtStatus()).toUpperCase();
+            // jCIFS only raises SmbAuthException for some logon failures, e.g. not ACCOUNT_EXPIRED.
+            return e instanceof SmbAuthException || LOGON_REJECTED.contains(e.getNtStatus())
+                    ? profile.rejected(result, code, e.getMessage())
+                    : Results.fail(result, code, e.getMessage());
         } catch (Exception e) {
             return Results.fail(result, Results.codeFor(e), e.getMessage());
         } finally {
