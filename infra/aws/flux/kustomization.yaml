@@ -1,0 +1,10 @@
+# The AD load tester's AWS infrastructure, applied by tofu-controller on the EKS cluster. Deployed by the
+# ad-loadtest-infra Kustomization in the cluster repository, see pc-dae-gitops/aws-ad-loadtest
+# target-cluster/flux/ad-loadtest-infra.yaml, which substitutes the EKS cluster's tf-config ConfigMap settings:
+# region, tf_state_bucket, tf_lock_table, eks_cluster_name and owner_email. The runner pods use the EKS cluster's
+# tf-runner IAM role, using EKS Pod Identity. Destroy with bin/aws-teardown.sh, not by deleting the cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ad.yaml
+  - secrets.yaml

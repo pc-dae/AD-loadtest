@@ -1,0 +1,93 @@
+<powershell>
+# First domain controller: creates the forest, installs an enterprise CA so domain controllers
+# auto-enrol for the certificate LDAPS needs, and seeds the load-test users with the same scheme as
+# the Samba lab (docker/samba-dc/seed-users.py) and the chart's users CSV:
+#   i % 4 == 0  member of LT-Authorised
+#   i % 4 == 1  member of LT-Authorised-Nested, itself a member of LT-Authorised
+#   otherwise   member of LT-Denied
+# EC2Launch runs this at every boot (persist below); each run carries on after the last reboot.
+# Progress is logged to C:\ad-loadtest-setup.log.
+$ErrorActionPreference = 'Stop'
+Start-Transcript -Path C:\ad-loadtest-setup.log -Append
+
+$ComputerName = '${computer_name}'
+$DomainName = '${domain_name}'
+$Netbios = '${netbios_name}'
+$AdminPassword = ConvertTo-SecureString '${admin_password}' -AsPlainText -Force
+$UserPassword = ConvertTo-SecureString '${test_user_password}' -AsPlainText -Force
+$UserCount = ${user_count}
+$SeededMarker = 'C:\ad-loadtest-seeded.txt'
+
+if ($env:COMPUTERNAME -ne $ComputerName) {
+    # The local Administrator becomes the domain Administrator when the forest is created.
+    Set-LocalUser -Name Administrator -Password $AdminPassword
+    Rename-Computer -NewName $ComputerName -Force
+    Restart-Computer -Force
+    exit
+}
+
+if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) {
+    Install-WindowsFeature AD-Domain-Services, ADCS-Cert-Authority -IncludeManagementTools | Out-Null
+    Install-ADDSForest -DomainName $DomainName -DomainNetbiosName $Netbios `
+        -SafeModeAdministratorPassword $AdminPassword -InstallDns -Force -NoRebootOnCompletion
+    Restart-Computer -Force
+    exit
+}
+
+if (Test-Path $SeededMarker) {
+    Write-Output 'Domain already set up'
+    Stop-Transcript
+    exit
+}
+
+# AD Web Services takes a little while after boot.
+for ($i = 0; $i -lt 60; $i++) {
+    try { Get-ADDomain | Out-Null; break } catch { Start-Sleep -Seconds 10 }
+}
+$UsersOu = 'CN=Users,' + (Get-ADDomain).DistinguishedName
+
+if (-not (Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration')) {
+    Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -CACommonName "$Netbios-CA" -Force | Out-Null
+}
+# Ask for the domain controller certificate now rather than at the next autoenrolment cycle.
+certutil -pulse | Out-Null
+
+# Lab policy: load tests reuse the same accounts and send bad passwords on purpose.
+Set-ADDefaultDomainPasswordPolicy -Identity $DomainName -LockoutThreshold 0 -MaxPasswordAge 0 `
+    -MinPasswordAge 0 -PasswordHistoryCount 0 -ComplexityEnabled $false
+
+foreach ($group in 'LT-Authorised', 'LT-Authorised-Nested', 'LT-Denied') {
+    if (-not (Get-ADGroup -Filter "Name -eq '$group'")) {
+        New-ADGroup -Name $group -GroupScope Global -Path $UsersOu
+    }
+}
+if (-not (Get-ADGroupMember -Identity 'LT-Authorised' | Where-Object Name -eq 'LT-Authorised-Nested')) {
+    Add-ADGroupMember -Identity 'LT-Authorised' -Members 'LT-Authorised-Nested'
+}
+
+function New-LoadTestUser([string] $Sam) {
+    if (-not (Get-ADUser -Filter "SamAccountName -eq '$Sam'")) {
+        New-ADUser -Name $Sam -SamAccountName $Sam -UserPrincipalName "$Sam@$DomainName" -Path $UsersOu `
+            -AccountPassword $UserPassword -Enabled $true -PasswordNeverExpires $true
+    }
+}
+
+New-LoadTestUser 'svc-ltapp'
+$members = @{ 'LT-Authorised' = @(); 'LT-Authorised-Nested' = @(); 'LT-Denied' = @() }
+for ($i = 1; $i -le $UserCount; $i++) {
+    $sam = 'ltuser{0:D5}' -f $i
+    New-LoadTestUser $sam
+    $group = switch ($i % 4) { 0 { 'LT-Authorised' } 1 { 'LT-Authorised-Nested' } default { 'LT-Denied' } }
+    $members[$group] += $sam
+}
+foreach ($group in $members.Keys) {
+    $existing = @(Get-ADGroupMember -Identity $group | Select-Object -ExpandProperty SamAccountName)
+    $missing = @($members[$group] | Where-Object { $existing -notcontains $_ })
+    if ($missing.Count -gt 0) { Add-ADGroupMember -Identity $group -Members $missing }
+}
+
+Set-Content -Path $SeededMarker -Value "Seeded $UserCount users $(Get-Date -Format o)"
+Write-Output "Domain $DomainName ready with $UserCount load-test users"
+Stop-Transcript
+</powershell>
+<persist>true</persist>

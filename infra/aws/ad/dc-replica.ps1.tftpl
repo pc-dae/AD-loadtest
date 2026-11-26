@@ -1,0 +1,48 @@
+<powershell>
+# Additional domain controller: waits for DC1 to create the forest, then joins it as a replica DC.
+# Users, groups and the enterprise CA's certificate templates replicate from DC1, and this DC
+# auto-enrols for its own LDAPS certificate.
+# EC2Launch runs this at every boot (persist below); each run carries on after the last reboot.
+# Progress is logged to C:\ad-loadtest-setup.log.
+$ErrorActionPreference = 'Stop'
+Start-Transcript -Path C:\ad-loadtest-setup.log -Append
+
+$ComputerName = '${computer_name}'
+$DomainName = '${domain_name}'
+$Netbios = '${netbios_name}'
+$Dc1Ip = '${dc1_ip}'
+$AdminPassword = ConvertTo-SecureString '${admin_password}' -AsPlainText -Force
+
+if ($env:COMPUTERNAME -ne $ComputerName) {
+    Set-LocalUser -Name Administrator -Password $AdminPassword
+    Rename-Computer -NewName $ComputerName -Force
+    Restart-Computer -Force
+    exit
+}
+
+if ((Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4) {
+    Write-Output 'Already a domain controller'
+    certutil -pulse | Out-Null
+    Stop-Transcript
+    exit
+}
+
+$nic = Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -First 1
+Set-DnsClientServerAddress -InterfaceIndex $nic.ifIndex -ServerAddresses $Dc1Ip
+
+# DC1 needs about 20-30 minutes to create the forest; wait up to an hour for its DNS and AD Web Services.
+for ($i = 0; $i -lt 180; $i++) {
+    try {
+        Resolve-DnsName -Name $DomainName -Server $Dc1Ip -DnsOnly | Out-Null
+        if ((Test-NetConnection -ComputerName $Dc1Ip -Port 9389 -WarningAction SilentlyContinue).TcpTestSucceeded) { break }
+    } catch { }
+    Start-Sleep -Seconds 20
+}
+
+Install-WindowsFeature AD-Domain-Services -IncludeManagementTools | Out-Null
+$credential = New-Object System.Management.Automation.PSCredential("$Netbios\Administrator", $AdminPassword)
+Install-ADDSDomainController -DomainName $DomainName -Credential $credential -InstallDns `
+    -SafeModeAdministratorPassword $AdminPassword -Force -NoRebootOnCompletion
+Restart-Computer -Force
+</powershell>
+<persist>true</persist>

@@ -11,7 +11,7 @@ It runs in three ways, all from the same images and test plan:
 |---|---|---|
 | **Docker Compose** (`make up`) | Samba 4 AD DC container | Fastest local loop, no cluster |
 | **kind + Helm** (`make kind-up`) | Samba 4 AD DC pod | Local Kubernetes, same chart that later runs on EKS |
-| **AWS** (planned) | Windows Server DCs on EC2 | Real numbers; ephemeral, spun up and torn down per session |
+| **AWS** (via [aws-ad-loadtest](https://github.com/pc-dae-gitops/aws-ad-loadtest)) | Windows Server DCs on EC2 | Real numbers; ephemeral, spun up and torn down per session |
 
 ## What it measures
 
@@ -190,26 +190,53 @@ jmeter/lab.properties, krb5.conf           Target configuration
 docker/samba-dc/                           Samba AD DC image, provisioning and user seeding
 docker/jmeter/                             JMeter 5.6.3 image (multi-stage; builds samplers + controller; used by both)
 charts/ad-loadtest/                        Helm chart (kind now, EKS later); dashboards/ holds the Grafana dashboard
-kind/cluster.yaml                          Local kind cluster with NodePort mappings
+kind/cluster.yaml                          Local kind cluster with NodePort mappings (standalone, without Flux)
+infra/aws/ad/                              Terraform: Windows Server domain controllers in the EKS VPC
+infra/aws/flux/                            tofu-controller Terraform object and secret copy, applied from aws-ad-loadtest
+bin/                                       aws-status.sh, aws-teardown.sh
 docker/grafana/, docker/telegraf/          Compose-mode Grafana provisioning and metrics collection
 ```
 
-## Known limitations (phase 1)
+## Known limitations
 
 - **Samba is not Windows.** Latency and throughput against Samba say nothing about Windows DC capacity. The local lab proves the tooling and the test design, and the AWS phase produces the numbers that matter.
 - **A single DC on a laptop saturates early.** About 450 samples/s on an 8-core MacBook, with latency rising as threads are added beyond that. Load generator and DC also share the same CPU.
+- **No DC metrics on AWS yet.** Collecting Windows performance counters (LDAP, Kerberos, NTLM, LSASS) needs an agent on the DCs that can reach InfluxDB, which isn't built yet.
+- **The load generators target DC1 only.** DC2 provides replication and failover but isn't load-tested directly.
 - **No DC metrics in kind.** The DC CPU and memory panels rely on Telegraf reading Docker, so they only populate in the Compose mode.
 - **NTLM is tested over SMB**, not HTTP. Application-level NTLM/Negotiate to IIS arrives with phase 2.
 - **LDAP binds are simple binds over TLS.** SASL/GSSAPI (Kerberos-authenticated LDAP) binds are not yet implemented.
 
-## AWS (planned)
+## AWS
 
-The target is a time-limited, budget-capped sandbox account (6-day lease, $75), so the AWS deployment is **ephemeral by design**: one command brings it up, one tears it down, nothing runs while idle, and everything is rebuilt from git.
+The cluster lifecycle is managed from the config repository [pc-dae-gitops/aws-ad-loadtest](https://github.com/pc-dae-gitops/aws-ad-loadtest), using mac-k8s. Its README has the up, use and tear-down steps. This repository provides what that config repository deploys:
 
-1. **Management:** the user's existing pattern. A local kind cluster runs Flux and tofu-controller (see `pc-dae-gitops/mac-k8s` and `aws-eks-voters`), and Terraform state lives in S3.
-2. **Infrastructure:** this repository's `infra/aws/` (to be added) holds Terraform and the tofu-controller `Terraform` objects for:
-   - a VPC with two Windows Server DCs, seeded by PowerShell with the same user scheme
-   - an optional IIS member server for HTTP NTLM and Negotiate tests
-3. **Load generation:** the same Helm chart on EKS with `samba.enabled=false` and `dc.host` set to the Windows DCs, running inside the VPC so the DCs are never exposed publicly.
-4. **Telemetry:** DC performance counters (LDAP searches/s, Kerberos AS/TGS requests/s, NTLM authentications/s, LSASS CPU) collected with Telegraf on Windows and shown on the same dashboard.
-5. **Cost:** small instance sizes, a single NAT gateway, and `up` / `down` scripts with a teardown check.
+| Path | Deployed by | What it is |
+|---|---|---|
+| `charts/ad-loadtest` | the apps ResourceSet, on kind and on EKS | The load tester. On EKS it runs with `samba.enabled=false`, `dc.host` set to DC1, and `secrets.existingSecret=ad-loadtest-ad` |
+| `infra/aws/flux` | `ad-loadtest-infra` Kustomization on EKS | The tofu-controller `Terraform` object, plus a ResourceSet that copies the domain passwords into the app's namespace |
+| `infra/aws/ad` | tofu-controller | Windows Server 2022 domain controllers in the EKS VPC's private subnets: no public access, fixed IPs, AD ports open only to the VPC |
+| `bin/aws-status.sh` | you | What's running in the account and roughly what it costs |
+| `bin/aws-teardown.sh` | you | Destroys the domain controllers. Run it **before** `eks-teardown.sh` |
+
+### What the domain controllers do
+
+On first boot, each DC runs a PowerShell script (`infra/aws/ad/*.ps1.tftpl`). The scripts are idempotent and re-run after every reboot, so each run carries on from where the last one stopped.
+
+- **DC1** renames itself and creates the `lab.local` forest. It then installs an enterprise CA, so domain controllers enrol for the certificate LDAPS needs. Finally it disables lockout, expiry and complexity, and seeds `svc-ltapp`, `ltuser00001` to `ltuser00500` and the `LT-*` groups, using the same scheme as the Samba lab.
+- **DC2** waits for DC1, then joins as a replica. Set `ad_dc_count: "1"` to save cost.
+
+Terraform generates the passwords and puts them in the outputs Secret. They're also passed in the instance user data, because the `tf-runner` role only has EC2 permissions, so there's no instance profile for Parameter Store. That's fine for a disposable lab and not for anything real. A new AMI or a script change never replaces a running DC (`ignore_changes`).
+
+### Cost guard rails
+
+The sandbox account is limited to 6 days and $75. Running everything costs about $0.45/hour:
+
+| Item | Cost |
+|---|---|
+| EKS control plane | $0.10/h |
+| 2 × t3.large nodes | $0.19/h |
+| 2 × t3.medium Windows DCs | $0.12/h |
+| NAT gateway and NLB | $0.08/h |
+
+Use it in sessions and tear down in between. `bin/aws-status.sh` shows anything left running.

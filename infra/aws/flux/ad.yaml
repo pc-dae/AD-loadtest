@@ -1,0 +1,51 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: ad-loadtest-ad
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 2m
+  approvePlan: auto
+  # The plan is written to the tfplan-default-<name> ConfigMap
+  storeReadablePlan: human
+  # Deleting this object destroys the domain controllers, see bin/aws-teardown.sh
+  destroyResourcesOnDeletion: true
+  path: ./infra/aws/ad
+  sourceRef:
+    kind: GitRepository
+    name: ad-loadtest
+    namespace: flux-system
+  backendConfig:
+    customConfiguration: |
+      backend "s3" {
+        bucket         = "${tf_state_bucket}"
+        key            = "ad-loadtest/ad/terraform.tfstate"
+        region         = "${region}"
+        dynamodb_table = "${tf_lock_table}"
+        encrypt        = true
+      }
+  varsFrom:
+    - kind: ConfigMap
+      name: tf-config
+      varsKeys:
+        - region
+        - owner_email
+        - eks_cluster_name
+  # Optional overrides, set in the ad-loadtest-infra Kustomization's postBuild substitute
+  vars:
+    - name: dc_count
+      value: ${ad_dc_count:=2}
+    - name: instance_type
+      value: "${ad_instance_type:=t3.medium}"
+    - name: user_count
+      value: ${ad_user_count:=500}
+  # The chart's passwords, copied to the app's namespace by secrets.yaml; the IPs for bin/aws-status.sh
+  writeOutputsToSecret:
+    name: ad-loadtest-ad-outputs
+    outputs:
+      - adminPassword
+      - testUserPassword
+      - dc1_ip
+      - dc_ips
+      - instance_ids
