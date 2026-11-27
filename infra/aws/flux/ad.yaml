@@ -44,7 +44,9 @@ spec:
       value: ${ad_role_groups:=200}
     - name: nest_depth
       value: ${ad_nest_depth:=8}
-  # The chart's passwords, copied to the app's namespace by secrets.yaml; the IPs for bin/aws-status.sh
+    - name: computer_count
+      value: ${ad_computer_count:=100}
+  # The chart's passwords and DC list (dc_ips), copied to the app's namespace by secrets.yaml
   writeOutputsToSecret:
     name: ad-loadtest-ad-outputs
     outputs:

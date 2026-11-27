@@ -48,8 +48,8 @@ public class LdapBindSampler extends AbstractJavaSamplerClient {
         UserProfile profile = UserProfile.from(ctx);
         SampleResult result = profile.start();
         try (LDAPConnection conn = ldap.connect()) {
-            conn.bind(new SimpleBindRequest(bindName, ctx.getParameter("password")));
-            return profile.accepted(result, "SUCCESS", "bound as " + bindName);
+            conn.bind(new SimpleBindRequest(bindName, profile.password(ctx)));
+            return profile.accepted(result, "SUCCESS", "bound as " + bindName + " on " + ldap.host);
         } catch (LDAPException e) {
             String code = LdapSupport.code(e);
             String message = LdapSupport.message(e);

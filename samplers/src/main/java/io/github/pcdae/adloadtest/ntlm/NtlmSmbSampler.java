@@ -8,6 +8,7 @@ import org.apache.jmeter.protocol.java.sampler.AbstractJavaSamplerClient;
 import org.apache.jmeter.protocol.java.sampler.JavaSamplerContext;
 import org.apache.jmeter.samplers.SampleResult;
 
+import io.github.pcdae.adloadtest.common.Generators;
 import io.github.pcdae.adloadtest.common.Params;
 import io.github.pcdae.adloadtest.common.Results;
 import io.github.pcdae.adloadtest.common.UserProfile;
@@ -24,7 +25,7 @@ import jcifs.smb.SmbFile;
  * Authentication: an SMB2 session setup using NTLMSSP (NTLMv2) against a domain controller,
  * followed by a tree connect and directory listing of {@code smb.share}. The DC validates the
  * NTLM response itself, so this exercises the same netlogon path as NTLM pass-through from an
- * application server.
+ * application server. Each thread uses one DC from {@code ad.host}.
  *
  * <p>A new jCIFS context is created per sample so no session is reused between samples.
  */
@@ -63,7 +64,7 @@ public class NtlmSmbSampler extends AbstractJavaSamplerClient {
 
     @Override
     public void setupTest(JavaSamplerContext ctx) {
-        String host = Params.get(ctx, "ad.host", "dc1.lab.local");
+        String host = Generators.hostForThread(ctx, "dc1.lab.local");
         String share = Params.get(ctx, "smb.share", "netlogon");
         int port = Params.getInt(ctx, "smb.port", 445);
         url = "smb://" + host + (port == 445 ? "" : ":" + port) + "/" + share + "/";
@@ -86,8 +87,8 @@ public class NtlmSmbSampler extends AbstractJavaSamplerClient {
     @Override
     public SampleResult runTest(JavaSamplerContext ctx) {
         String username = ctx.getParameter("username");
-        String password = ctx.getParameter("password");
         UserProfile profile = UserProfile.from(ctx);
+        String password = profile.password(ctx);
         SampleResult result = profile.start();
         BaseContext base = new BaseContext(config);
         try {
@@ -95,7 +96,7 @@ public class NtlmSmbSampler extends AbstractJavaSamplerClient {
             try (SmbFile share = new SmbFile(url, auth)) {
                 share.list();
             }
-            return profile.accepted(result, "SUCCESS", "NTLM session for " + domain + "\\" + username);
+            return profile.accepted(result, "SUCCESS", "NTLM session for " + domain + "\\" + username + " on " + url);
         } catch (SmbException e) {
             String code = "NT_STATUS_" + Integer.toHexString(e.getNtStatus()).toUpperCase();
             // jCIFS only raises SmbAuthException for some logon failures, e.g. not ACCOUNT_EXPIRED.

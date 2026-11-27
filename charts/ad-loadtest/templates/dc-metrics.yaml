@@ -1,0 +1,48 @@
+{{- if .Values.dcMetrics.enabled }}
+# Scrapes the Telegraf agent on each Windows DC (Prometheus format) into the telegraf database as
+# measurement "dc", tagged with the DC's host name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-dc-metrics
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "dc-metrics") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        app.kubernetes.io/component: dc-metrics
+    spec:
+      containers:
+        - name: telegraf
+          image: "{{ .Values.dcMetrics.image.repository }}:{{ .Values.dcMetrics.image.tag }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              urls=$(echo "$DC_HOSTS" | awk -v port="$METRICS_PORT" -F, '{
+                for (i = 1; i <= NF; i++) printf "%s\"http://%s:%s/metrics\"", (i > 1 ? ", " : ""), $i, port }')
+              cat > /tmp/telegraf.conf <<CONF
+              [agent]
+                interval = "5s"
+                flush_interval = "5s"
+                omit_hostname = true
+              [[inputs.prometheus]]
+                urls = [$urls]
+                metric_version = 2
+                name_override = "dc"
+                fieldinclude = ["win_*"]
+                tagexclude = ["url"]
+              [[outputs.influxdb]]
+                urls = ["http://{{ .Release.Name }}-influxdb:8086"]
+                database = "telegraf"
+              CONF
+              exec telegraf --config /tmp/telegraf.conf
+          env:
+            - { name: METRICS_PORT, value: {{ .Values.dcMetrics.port | quote }} }
+            {{- include "adlt.dcHostsEnv" . | nindent 12 }}
+{{- end }}

@@ -44,6 +44,11 @@ data "aws_ami" "windows" {
 
 locals {
   dc_ips = [for s in data.aws_subnet.dc : cidrhost(s.cidr_block, var.dc_ip_offset)]
+  telegraf_setup = templatefile("${path.module}/telegraf.ps1.tftpl", {
+    telegraf_version = var.telegraf_version
+    telegraf_sha256  = var.telegraf_sha256
+    metrics_port     = var.metrics_port
+  })
 }
 
 # Restricted to characters that are safe in PowerShell single-quoted strings, CSV and properties files.
@@ -107,7 +112,9 @@ resource "aws_instance" "dc" {
     user_count         = var.user_count
     role_groups        = var.role_groups
     nest_depth         = var.nest_depth
+    computer_count     = var.computer_count
     dc1_ip             = local.dc_ips[0]
+    telegraf_setup     = local.telegraf_setup
   })
 
   root_block_device {

@@ -1,4 +1,3 @@
-{{- $dc := include "adlt.dcHost" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,7 +6,8 @@ metadata:
 data:
   # Target profile for this cluster; shows up in the web UI as "{{ .Release.Name }}".
   {{ .Release.Name }}.properties: |
-    ad.host={{ $dc }}
+    # Rendered by the prepare init container from DC_HOSTS (dc.hosts or dc.hostsSecretKey).
+    ad.host=@DC_HOSTS@
     ad.domain={{ .Values.domain.netbios }}
     ad.realm={{ .Values.domain.realm }}
     ad.upnSuffix={{ .Values.domain.upnSuffix }}
@@ -22,9 +22,11 @@ data:
     kerberos.spn={{ .Values.domain.kerberosSpn }}
     smb.share={{ .Values.dc.smbShare }}
     users.csv=/data/users.csv
+    computers.csv=/data/computers.csv
     ldap.threads=5
     kerberos.threads=5
     ntlm.threads=5
+    computer.threads=0
     rampup=10
     duration=120
     think.ms=0
@@ -48,7 +50,7 @@ data:
       permitted_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
     [realms]
       {{ .Values.domain.realm }} = {
-        kdc = {{ $dc }}:88
+        @KDCS@
       }
     [domain_realm]
       .{{ lower .Values.domain.upnSuffix }} = {{ .Values.domain.realm }}

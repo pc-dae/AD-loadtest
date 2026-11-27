@@ -31,6 +31,10 @@ import java.util.stream.Stream;
  * Runs JMeter as a child process, one run at a time (JMeter's shutdown port is per host),
  * and keeps enough state to report progress. Each run's settings and outcome are saved as
  * run.properties next to its results so the history survives restarts.
+ *
+ * <p>With remote load generators (JMeter servers, {@code REMOTE_HOSTS}) the child process is the
+ * JMeter client: it sends the plan and properties to the first {@code generators} servers, collects
+ * their samples into one results file and report, and the console summary covers all of them.
  */
 final class RunManager {
 
@@ -38,21 +42,35 @@ final class RunManager {
     private static final Pattern SUMMARY = Pattern.compile(
             "summary ([=+])\\s+(\\d+) in (\\S+) =\\s+([\\d.]+)/s Avg:\\s+(\\d+) Min:\\s+(\\d+) Max:\\s+(\\d+) Err:\\s+(\\d+) \\(([\\d.]+)%\\)(?: Active: (\\d+))?");
     private static final int LOG_LINES = 200;
+    /** Fixed so the callback ports from the generators are predictable (this and the next few). */
+    private static final int CLIENT_RMI_PORT = 60000;
 
     private final Path configDir;
     private final Path resultsDir;
     private final Path jmeterHome;
     private final String plan;
     private final String jvmArgs;
+    private final List<String> remoteHosts;
 
     private volatile Run current;
 
-    RunManager(Path configDir, Path resultsDir, Path jmeterHome, String plan, String krb5Conf) {
+    /**
+     * @param remoteHosts JMeter servers to use as load generators, empty to run the load in the child process
+     * @param rmiHostname address the servers call back on with results, when {@code remoteHosts} is set
+     */
+    RunManager(Path configDir, Path resultsDir, Path jmeterHome, String plan, String krb5Conf,
+               List<String> remoteHosts, String rmiHostname) {
         this.configDir = configDir;
         this.resultsDir = resultsDir;
         this.jmeterHome = jmeterHome;
         this.plan = plan;
-        this.jvmArgs = "-Djava.security.krb5.conf=" + krb5Conf + " -Djavax.security.auth.useSubjectCredsOnly=true";
+        this.remoteHosts = List.copyOf(remoteHosts);
+        this.jvmArgs = "-Djava.security.krb5.conf=" + krb5Conf + " -Djavax.security.auth.useSubjectCredsOnly=true"
+                + (rmiHostname.isEmpty() ? "" : " -Djava.rmi.server.hostname=" + rmiHostname);
+    }
+
+    List<String> remoteHosts() {
+        return remoteHosts;
     }
 
     final class Run {
@@ -126,11 +144,22 @@ final class RunManager {
         Run run = new Run(id, request);
         Files.createDirectories(run.dir);
 
+        String profile = configDir.resolve(request.profile()).toString();
         List<String> cmd = new ArrayList<>(List.of(
                 jmeterHome.resolve("bin/jmeter").toString(), "-n",
                 "-t", configDir.resolve(plan).toString(),
-                "-q", configDir.resolve(request.profile()).toString()));
-        request.jmeterProperties().forEach((k, v) -> cmd.add("-J" + k + "=" + v));
+                "-q", profile));
+        Map<String, String> props = new LinkedHashMap<>(request.jmeterProperties());
+        props.put("run.title", request.label().isEmpty() ? "Run " + id : "Run " + id + " " + request.label());
+        props.forEach((k, v) -> cmd.add("-J" + k + "=" + v));
+        if (request.generators() > 0) {
+            // Servers only get what is sent with -G: the profile file, then this run's overrides.
+            cmd.add("-R" + String.join(",", remoteHosts.subList(0, request.generators())));
+            cmd.add("-G" + profile);
+            props.forEach((k, v) -> cmd.add("-G" + k + "=" + v));
+            cmd.add("-Jserver.rmi.ssl.disable=true");
+            cmd.add("-Jclient.rmi.localport=" + CLIENT_RMI_PORT);
+        }
         // Console summaries every 5 s drive the live tiles in the UI.
         cmd.add("-Jsummariser.interval=5");
         cmd.addAll(List.of(

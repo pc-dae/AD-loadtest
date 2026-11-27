@@ -28,7 +28,7 @@ spec:
     metadata:
       labels:
         {{- include "adlt.labels" . | nindent 8 }}
-        {{- include "adlt.selector" (dict "root" . "component" "samba-dc") | nindent 8 }}
+        app.kubernetes.io/component: samba-dc
     spec:
       hostname: {{ .Values.samba.hostname }}
       containers:
@@ -46,6 +46,7 @@ spec:
             - { name: SEED_USERS, value: {{ .Values.users.count | quote }} }
             - { name: ROLE_GROUPS, value: {{ .Values.users.roleGroups | quote }} }
             - { name: NEST_DEPTH, value: {{ .Values.users.nestDepth | quote }} }
+            - { name: COMPUTER_COUNT, value: {{ .Values.users.computerCount | quote }} }
             - { name: USERS_CSV, value: /var/lib/samba/users.csv }
             - name: ADMIN_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ include "adlt.secretName" . }}, key: adminPassword } }

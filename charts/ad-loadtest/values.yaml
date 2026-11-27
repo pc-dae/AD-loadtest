@@ -14,6 +14,11 @@ domain:
 dc:
   # Hostname or IP the load generators connect to. Empty = the in-cluster Samba DC.
   host: ""
+  # Several DCs: each load-generator thread sticks to one, Kerberos asks the first (rotated per
+  # generator). Overrides host. Or take the comma-separated list from a key of the secret, e.g.
+  # dc_ips from the AWS Terraform outputs.
+  hosts: []
+  hostsSecretKey: ""
   ldapPort: 636
   ldapTls: true
   ldapTrustAll: true
@@ -37,7 +42,9 @@ users:
   # when the chart seeds the Samba DC; set the same values for Windows DCs in Terraform.
   roleGroups: 200
   nestDepth: 8
-  # Supply your own users.csv (key users.csv) instead of generating one.
+  # Computer accounts LTPC00001$... for machine-logon tests (computers.csv).
+  computerCount: 100
+  # Supply your own users.csv and/or computers.csv (keys users.csv, computers.csv) instead of generating them.
   existingConfigMap: ""
 
 samba:
@@ -69,6 +76,23 @@ controller:
   # Extra JMeter properties appended to the generated profile.
   extraProperties: {}
   resources: {}
+
+# Extra load generators: JMeter servers the controller spreads each run over. 0 = JMeter runs in
+# the controller pod. Thread counts in a run must be a multiple of the number of generators used.
+generators:
+  replicas: 0
+  heap: "-Xms512m -Xmx2g"
+  resources: {}
+
+# DC performance counters (CPU, LSASS, LDAP, Kerberos, NTLM/Netlogon) for the dashboard and run
+# comparisons. Each Windows DC serves them on port 9273 (Telegraf, see infra/aws/ad); this scrapes
+# the DCs in dc.hosts / dc.hostsSecretKey into InfluxDB.
+dcMetrics:
+  enabled: false
+  port: 9273
+  image:
+    repository: telegraf
+    tag: "1.40"
 
 influxdb:
   image:

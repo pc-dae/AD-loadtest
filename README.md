@@ -22,6 +22,9 @@ It runs in three ways, all from the same images and test plan:
 | `Kerberos TGT (AS)` | Kerberos | AS-REQ/AS-REP including the pre-authentication round trip | TGT issued |
 | `Kerberos service ticket (TGS)` | Kerberos | TGS-REQ for `kerberos.spn` using that TGT, then builds the AP-REQ (this is where AD assembles the PAC with group memberships) | Service ticket issued |
 | `NTLM SMB session` | NTLMv2 over SMB2 | Session setup with NTLMSSP, tree connect and listing of `netlogon` on the DC | Session established |
+| `Computer Kerberos TGT (AS)` / `… service ticket (TGS)` | Kerberos | The same two steps with a **computer account** (`LTPC00001$`…, from `computers.csv`), as a machine does at boot and for Group Policy. Off by default | TGT and ticket issued |
+
+One iteration of a protocol's thread group is one **login attempt**: LDAP bind + group check, Kerberos TGT + service ticket, one NTLM session, or one computer logon. Rates and attempt totals count these.
 
 Each sample uses a fresh connection or context, so nothing is cached between samples and every login really reaches the DC. Failures are reported with a stable code, for example `INVALID_CREDENTIALS`, `KDC_ERR_PREAUTH_FAILED`, `NT_STATUS_C000006D` or `UNEXPECTED_AUTHORISED`, and the dashboard groups errors by that code.
 
@@ -59,7 +62,9 @@ make dashboard   # open Grafana directly (anonymous viewer; admin/admin to edit)
 
 The page at http://localhost:8080 lets you:
 
-- choose a target profile, duration, ramp-up, threads per protocol, think time and authorisation mode
+- choose a target profile, duration, ramp-up, think time and authorisation mode, and per protocol the **threads**, a **target rate** (attempts per second) and a **total number of attempts** (see [Load shape](#load-shape-failure-tests-and-multiple-dcs))
+- add a **bad-password percentage** for failure testing, pick the **target DCs**, and the number of **load generators**
+- **label** runs (for example `baseline` and `agent on`) and **compare** two of them side by side: response times, errors and DC resource use (see [Comparing runs](#comparing-runs-agent-impact))
 - **start** and **stop** runs (stop is graceful: JMeter finishes in-flight samples and still writes its report)
 - watch live throughput, response time, error rate and active threads, plus the JMeter console
 - see the Grafana dashboard embedded in the page
@@ -73,12 +78,15 @@ The controller exposes a small JSON API, which is also useful for scripting:
 |---|---|
 | `GET /api/status` | Current or last run, live stats, console tail |
 | `GET /api/runs` | Run history |
-| `POST /api/runs` | Start a run; form fields `profile, duration, rampup, ldapThreads, kerberosThreads, ntlmThreads, thinkMs, authzBindAs` |
+| `POST /api/runs` | Start a run; form fields `profile, label, duration, rampup, thinkMs, authzBindAs`, per protocol (`ldap`, `kerberos`, `ntlm`, `computer`) `<p>Threads, <p>Rate, <p>Attempts`, and `badPasswordPct, badPasswordMaxPerUser, targetHosts, generators` |
+| `GET /api/compare?a=<run>&b=<run>` | Two finished runs side by side |
 | `POST /api/runs/stop` | Stop the current run |
 | `GET /api/profiles` | Available target profiles |
 
 ```bash
 curl -X POST localhost:8080/api/runs -d 'duration=300&ldapThreads=20&kerberosThreads=20&ntlmThreads=10'
+# 10,000 Kerberos logins in 5 minutes (33.3/s), 5% of them with a wrong password
+curl -X POST localhost:8080/api/runs -d 'label=10k-5min&duration=330&ldapThreads=0&ntlmThreads=0&kerberosThreads=20&kerberosRate=33.4&kerberosAttempts=10000&badPasswordPct=5'
 ```
 
 The controller has no authentication. It is published on loopback only, so put it behind authentication before exposing it anywhere else.
@@ -99,7 +107,41 @@ Each run writes `results/<run id>/results.jtl`, `jmeter.log` and a JMeter HTML r
 | `make clean` | Stop and delete the domain, metrics and results |
 | `make logs` | Follow the DC log |
 
-Setting a protocol's threads to `0` disables it, for example `make test NTLM_THREADS=0`.
+Setting a protocol's threads to `0` disables it, for example `make test NTLM_THREADS=0`. Other settings go in `EXTRA`, for example `make test EXTRA="-Jkerberos.rate=33.4 -Jkerberos.iterations=10000 -JbadPassword.percent=5 -Jcomputer.threads=2"`.
+
+## Load shape, failure tests and multiple DCs
+
+These are JMeter properties (see `jmeter/lab.properties`), and the web form sets them per run.
+
+| Property | Effect |
+|---|---|
+| `<protocol>.rate` | Target attempts per second for the whole run, shared by the protocol's threads and spaced evenly. It's a ceiling: if the threads can't keep up, the run falls behind rather than bursting. Give it enough threads (rate × typical response time, plus headroom). |
+| `<protocol>.iterations` | Total attempts for the run. The protocol's threads stop once all have started, so the run ends on the count or on `duration`, whichever comes first. Together with a rate this gives requirements such as *10,000 attempts in 5 minutes* or *100,000 in 15 or 30 minutes*. |
+| `badPassword.percent` | Share of attempts sent with a wrong password, labelled `[bad-password]` and expected to be **rejected** (a rejection passes, an acceptance fails). |
+| `badPassword.maxPerUser` | Cap on bad attempts per user in a run, per load generator. **Set it below the domain's lockout threshold** on any domain with lockout; the lab domains have lockout turned off. |
+| `ad.host` | One DC or several, comma separated. Each thread sticks to one DC, as a Windows client does once the DC locator has chosen. Kerberos uses the first DC in the list as its KDC (Java only fails over, it doesn't balance), so each load generator starts the list at a different DC. The krb5.conf is generated from this list; set `kerberos.config=file` to use your own. |
+
+The `<protocol>` prefixes are `ldap`, `kerberos`, `ntlm` and `computer`. Expected rejections (disabled, expired, bad password) count as passes, so the error rate measures real failures only.
+
+### Several load generators
+
+One JMeter process managed about 450 samples per second against the laptop lab, which is above the target rates in the requirements. For more load, the controller can drive **JMeter servers** as extra generators. It sends each one the plan and the run's settings, divides rates and attempt totals between them, and collects every sample into one results file, report and live dashboard.
+
+- **Compose:** `make up-distributed` starts `gen1` and `gen2`, and the web form shows a *Load generators* choice.
+- **Kubernetes:** set `generators.replicas` in the chart (a StatefulSet of JMeter servers).
+
+Thread counts are per run and must be a multiple of the number of generators used, so each runs the same share.
+
+## Comparing runs (agent impact)
+
+To measure the impact of a security agent (or any other change) on the DCs, run the same load twice with labels such as `baseline` and `agent on`, then pick both under **Compare runs**. For each transaction the page shows samples, throughput, mean, p95 and p99 response times, and error rate, with the change from A to B. Mean and p95 changes beyond ±5% are highlighted.
+
+For each DC it shows resource use over each run's steady state (after ramp-up):
+
+- **On Windows DCs:** CPU, LSASS CPU and working set, available memory, LDAP binds, searches and bind time, Kerberos and NTLM authentications, ATQ latency and queue, and Netlogon semaphore waiters and timeouts.
+- **In the Docker lab:** CPU and memory of the Samba container.
+
+Run start and end appear as annotations on the Grafana dashboard, titled with the run id and label, and the comparison links to each run's time window. For a fair comparison, keep the threads, rate, attempts and target DCs the same across both runs.
 
 ## Running in Kubernetes
 
@@ -186,7 +228,11 @@ For ad-hoc debugging, the DC is also reachable from the Mac on loopback: LDAP `1
 - **Overview:** total requests, throughput, mean and p95 response times, errors, active threads
 - **Per transaction:** throughput, p95 and mean response time, and errors over time, plus a summary table
 - **Errors by response code:** what failed and why
-- **Domain controller:** CPU and memory of the DC container
+- **Domain controller (container):** CPU and memory of the Samba DC container (Compose)
+- **Domain controllers (Windows):** CPU, LSASS CPU and memory, Kerberos and NTLM authentications, LDAP binds and searches, ATQ latency and Netlogon semaphore waiters, per DC (AWS, from Telegraf on each DC)
+- **Annotations** mark each run's start and end with its id and label
+
+The dashboard is generated by `scripts/gen_dashboard.py`; edit that and re-run it rather than the JSON.
 
 Each transaction keeps a fixed colour on every panel.
 
@@ -203,6 +249,7 @@ charts/ad-loadtest/                        Helm chart deployed by aws-ad-loadtes
 infra/aws/ad/                              Terraform: Windows Server domain controllers in the EKS VPC
 infra/aws/flux/                            tofu-controller Terraform object and secret copy, applied from aws-ad-loadtest
 bin/                                       aws-status.sh, aws-teardown.sh
+scripts/gen_dashboard.py                   Generates the Grafana dashboard JSON
 docker/grafana/, docker/telegraf/          Compose-mode Grafana provisioning and metrics collection
 ```
 
@@ -210,9 +257,11 @@ docker/grafana/, docker/telegraf/          Compose-mode Grafana provisioning and
 
 - **Samba is not Windows.** Latency and throughput against Samba say nothing about Windows DC capacity. The local lab proves the tooling and the test design, and the AWS phase produces the numbers that matter.
 - **A single DC on a laptop saturates early.** About 450 samples/s on an 8-core MacBook, with latency rising as threads are added beyond that. Load generator and DC also share the same CPU.
-- **No DC metrics on AWS yet.** Collecting Windows performance counters (LDAP, Kerberos, NTLM, LSASS) needs an agent on the DCs that can reach InfluxDB, which isn't built yet.
-- **The load generators target DC1 only.** DC2 provides replication and failover but isn't load-tested directly.
-- **No DC metrics in Kubernetes.** The DC CPU and memory panels rely on Telegraf reading Docker, so they only populate in the Compose mode.
+- **Windows DC metrics are untested on real DCs.** Telegraf's counter set (`infra/aws/ad/telegraf.ps1.tftpl`) and the relay into InfluxDB were checked with a simulated DC, but not yet on Windows. The first AWS run will confirm the counter names.
+- **Kerberos balances per load generator, not per thread.** Java's Kerberos configuration is process-wide, so all of a generator's Kerberos traffic goes to its first DC. Use as many generators as DCs to spread Kerberos evenly. LDAP and NTLM spread per thread.
+- **The bad-password cap is per generator.** With several generators, each one counts bad attempts separately. Divide the cap by the number of generators on a domain with lockout.
+- **No DC metrics for the Samba DC in Kubernetes.** The container CPU and memory panels rely on Telegraf reading Docker, so they only populate in the Compose mode.
+- **Stack.** The controller is a dependency-free JDK HTTP server with a static JavaScript UI. Metrics go to InfluxDB and run history is kept on disk, not in Micronaut/React/PostgreSQL/Prometheus. The function is the same; changing stack would be a separate decision.
 - **NTLM is tested over SMB**, not HTTP. Application-level NTLM/Negotiate to IIS arrives with phase 2.
 - **LDAP binds are simple binds over TLS.** SASL/GSSAPI (Kerberos-authenticated LDAP) binds are not yet implemented.
 
@@ -222,7 +271,7 @@ The cluster lifecycle is managed from the config repository [pc-dae-gitops/aws-a
 
 | Path | Deployed by | What it is |
 |---|---|---|
-| `charts/ad-loadtest` | the apps ResourceSet, on kind and on EKS | The load tester. On EKS it runs with `samba.enabled=false`, `dc.host` set to DC1, and `secrets.existingSecret=ad-loadtest-ad` |
+| `charts/ad-loadtest` | the apps ResourceSet, on kind and on EKS | The load tester. On EKS it runs with `samba.enabled=false`, `secrets.existingSecret=ad-loadtest-ad`, `dc.hostsSecretKey=dc_ips` (all DCs, from Terraform) and `dcMetrics.enabled=true` |
 | `infra/aws/flux` | `ad-loadtest-infra` Kustomization on EKS | The tofu-controller `Terraform` object, plus a ResourceSet that copies the domain passwords into the app's namespace |
 | `infra/aws/ad` | tofu-controller | Windows Server 2022 domain controllers in the EKS VPC's private subnets: no public access, fixed IPs, AD ports open only to the VPC |
 | `bin/aws-status.sh` | you | What's running in the account and roughly what it costs |
@@ -233,7 +282,9 @@ The cluster lifecycle is managed from the config repository [pc-dae-gitops/aws-a
 On first boot, each DC runs a PowerShell script (`infra/aws/ad/*.ps1.tftpl`). The scripts are idempotent and re-run after every reboot, so each run carries on from where the last one stopped.
 
 - **DC1** renames itself and creates the `lab.local` forest. It then installs an enterprise CA, so domain controllers enrol for the certificate LDAPS needs. Finally it disables lockout, expiry and complexity, and seeds `svc-ltapp`, `ltuser00001` to `ltuser00500` and the `LT-*` groups, using the same scheme as the Samba lab.
+  It also creates 100 computer accounts (`LTPC00001$`…, `ad_computer_count`) for machine-logon tests.
 - **DC2** waits for DC1, then joins as a replica. Set `ad_dc_count: "1"` to save cost.
+- **Both** install Telegraf (version pinned and SHA-256 checked) as a service that serves the DC's performance counters on port 9273. The chart's `dc-metrics` deployment scrapes them into InfluxDB for the dashboard and run comparisons. Only the VPC can reach the port.
 
 Terraform generates the passwords and puts them in the outputs Secret. They're also passed in the instance user data, because the `tf-runner` role only has EC2 permissions, so there's no instance profile for Parameter Store. That's fine for a disposable lab and not for anything real. A new AMI or a script change never replaces a running DC (`ignore_changes`).
 

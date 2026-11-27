@@ -4,6 +4,8 @@ const $ = (id) => document.getElementById(id);
 const form = $('run-form');
 let lastState = null;
 let lastRunsRefresh = 0;
+let grafanaBase = null;
+const PROTOCOLS = [['ldap', 'LDAP'], ['kerberos', 'Kerberos'], ['ntlm', 'NTLM'], ['computer', 'Computers']];
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -34,8 +36,45 @@ async function loadConfig() {
   const cfg = await api('/api/config');
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const base = `${cfg.grafanaUrl}/d/${cfg.dashboardUid}`;
+  grafanaBase = base;
   $('grafana-link').href = `${base}?from=now-15m&to=now`;
   $('grafana').src = `${base}?from=now-15m&to=now&refresh=5s&kiosk&theme=${dark ? 'dark' : 'light'}`;
+
+  // Remote load generators (JMeter servers), when the controller has any.
+  const generators = cfg.generators || [];
+  if (generators.length) {
+    $('generators').replaceChildren(...generators.map((host, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i + 1);
+      opt.textContent = i === 0 ? `1 (${host})` : `${i + 1} of ${generators.length}`;
+      return opt;
+    }));
+    $('generators').value = String(generators.length);
+    $('generators-field').hidden = false;
+  }
+}
+
+/** Plain-language check of the load settings: how long the attempts take at the target rate. */
+function updateLoadSummary() {
+  const f = new FormData(form);
+  const duration = Number(f.get('duration')) || 0;
+  const lines = [];
+  for (const [key, name] of PROTOCOLS) {
+    const threads = Number(f.get(`${key}Threads`)) || 0;
+    const rate = Number(f.get(`${key}Rate`)) || 0;
+    const attempts = Number(f.get(`${key}Attempts`)) || 0;
+    if (!threads || (!rate && !attempts)) continue;
+    if (rate && attempts) {
+      const needed = attempts / rate;
+      const late = needed > duration ? ` (longer than the ${fmtDuration(duration)} duration, which ends the run first)` : '';
+      lines.push(`${name}: ${fmt(attempts)} attempts at ${fmt(rate, 1)}/s ≈ ${fmtDuration(needed)}${late}.`);
+    } else if (rate) {
+      lines.push(`${name}: ${fmt(rate, 1)}/s for ${fmtDuration(duration)} ≈ ${fmt(rate * duration)} attempts.`);
+    } else {
+      lines.push(`${name}: stops after ${fmt(attempts)} attempts, as fast as ${threads} threads go.`);
+    }
+  }
+  setText('load-summary', lines.join(' '));
 }
 
 async function loadProfiles() {
@@ -70,7 +109,10 @@ function renderStatus(status) {
   const pct = Math.min(100, (run.elapsedSec / run.duration) * 100);
   $('progress-bar').style.width = `${busy ? pct : 100}%`;
   if (busy) {
-    setText('progress-text', `${fmtDuration(run.elapsedSec)} of ${fmtDuration(run.duration)} · ${run.profile.replace(/\.properties$/, '')} · LDAP ${run.ldapThreads} / Kerberos ${run.kerberosThreads} / NTLM ${run.ntlmThreads} threads`);
+    const threads = PROTOCOLS.filter(([key]) => run[`${key}Threads`] > 0).map(([key, name]) => `${name} ${run[`${key}Threads`]}`).join(' / ');
+    const label = run.label ? ` · ${run.label}` : '';
+    const gens = run.generators > 1 ? ` on ${run.generators} generators` : '';
+    setText('progress-text', `${fmtDuration(run.elapsedSec)} of up to ${fmtDuration(run.duration)} · ${run.profile.replace(/\.properties$/, '')}${label} · ${threads} threads${gens}`);
   } else {
     const outcome = run.stopRequested ? 'stopped early' : run.exitCode === 0 ? 'completed' : `failed (exit ${run.exitCode})`;
     setText('progress-text', `Last run ${outcome} after ${fmtDuration(run.elapsedSec)}.`);
@@ -148,9 +190,10 @@ async function loadRuns() {
     };
     const cells = [
       [r.id, 'mono'],
+      [r.label || '', ''],
       [r.source === 'cli' ? 'CLI' : 'Web', ''],
       [r.profile ? r.profile.replace(/\.properties$/, '') : '–', ''],
-      [r.ldapThreads !== undefined ? `${r.ldapThreads} / ${r.kerberosThreads} / ${r.ntlmThreads}` : '–', 'num'],
+      [r.ldapThreads !== undefined ? `${r.ldapThreads} / ${r.kerberosThreads} / ${r.ntlmThreads} / ${r.computerThreads ?? 0}` : '–', 'num'],
       [r.duration ? fmtDuration(r.duration) : '–', 'num'],
       [fmt(total.samples), 'num'],
       [fmt(total.throughput, 1), 'num'],
@@ -184,14 +227,127 @@ async function loadRuns() {
   if (!rows.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 10;
+    td.colSpan = 11;
     td.className = 'muted';
     td.textContent = 'No runs yet.';
     tr.appendChild(td);
     rows.push(tr);
   }
   $('runs').replaceChildren(...rows);
+  // Finished runs with a report; command-line runs have no end time recorded.
+  fillCompareChoices(runs.filter((r) => String(r.hasReport) === 'true' && (r.source === 'cli' || r.endedAt)));
 }
+
+function fillCompareChoices(runs) {
+  for (const [id, fallback] of [['compare-a', 1], ['compare-b', 0]]) {
+    const select = $(id);
+    const previous = select.value;
+    select.replaceChildren(...runs.map((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.label ? `${r.id} · ${r.label}` : r.id;
+      return opt;
+    }));
+    if (runs.some((r) => r.id === previous)) select.value = previous;
+    else if (runs[fallback]) select.value = runs[fallback].id;
+  }
+}
+
+function pct(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined || Number(a) === 0) return null;
+  return ((Number(b) - Number(a)) / Number(a)) * 100;
+}
+
+function deltaCell(delta, colour) {
+  const td = document.createElement('td');
+  td.className = 'num';
+  if (delta === null) {
+    td.textContent = '–';
+    return td;
+  }
+  td.textContent = `${delta > 0 ? '+' : ''}${fmt(delta, 1)}%`;
+  // Response times: slower by more than 5% is worse, faster by more than 5% is better.
+  if (colour && Math.abs(delta) >= 5) td.classList.add(delta > 0 ? 'delta-worse' : 'delta-better');
+  return td;
+}
+
+function row(cells) {
+  const tr = document.createElement('tr');
+  for (const cell of cells) {
+    if (cell instanceof HTMLElement) {
+      tr.appendChild(cell);
+      continue;
+    }
+    const [text, cls] = cell;
+    const td = document.createElement('td');
+    td.textContent = text;
+    if (cls) td.className = cls;
+    tr.appendChild(td);
+  }
+  return tr;
+}
+
+const pair = (a, b, digits = 0) => `${fmt(a, digits)} / ${fmt(b, digits)}`;
+
+function fmtMetric(value, unit) {
+  if (value === null || value === undefined) return '–';
+  if (unit === 'bytes') return `${fmt(value / 1048576, 0)} MB`;
+  if (unit === 'percent') return `${fmt(value, 1)}%`;
+  const number = fmt(value, value < 10 ? 2 : 0);
+  return unit ? `${number} ${unit}` : number;
+}
+
+function describeRun(r) {
+  const threads = PROTOCOLS.filter(([key]) => Number(r[`${key}Threads`]) > 0).map(([key, name]) => `${name} ${r[`${key}Threads`]}`).join(', ');
+  return `${r.id}${r.label ? ` (${r.label})` : ''}${threads ? `: ${threads} threads` : ''}`;
+}
+
+$('compare-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const errorEl = $('compare-error');
+  errorEl.hidden = true;
+  const a = $('compare-a').value;
+  const b = $('compare-b').value;
+  let data;
+  try {
+    data = await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.hidden = false;
+    $('compare-result').hidden = true;
+    return;
+  }
+  setText('compare-meta', `A = ${describeRun(data.a)}. B = ${describeRun(data.b)}.`);
+  $('compare-tx').replaceChildren(...data.transactions.map((t) => {
+    const a = t.a || {};
+    const b = t.b || {};
+    return row([
+      [t.transaction, t.transaction === 'Total' ? 'strong' : ''],
+      [pair(a.samples, b.samples), 'num'],
+      [pair(a.throughput, b.throughput, 1), 'num'],
+      [pair(a.mean, b.mean, 1), 'num'],
+      deltaCell(pct(a.mean, b.mean), true),
+      [pair(a.p95, b.p95, 1), 'num'],
+      deltaCell(pct(a.p95, b.p95), true),
+      [pair(a.p99, b.p99, 1), 'num'],
+      [pair(a.errorPct, b.errorPct, 2), 'num'],
+    ]);
+  }));
+  const dcRows = data.dc.map((m) => row([
+    [m.dc, 'mono'], [m.metric, ''],
+    [fmtMetric(m.a, m.unit), 'num'], [fmtMetric(m.b, m.unit), 'num'],
+    deltaCell(pct(m.a, m.b), false),
+  ]));
+  $('compare-dc').replaceChildren(...dcRows);
+  setText('compare-dc-note', data.dcError
+    || (dcRows.length ? '' : 'No DC metrics recorded for these runs. On AWS they come from Telegraf on each Windows DC; in the Docker lab from the Samba container.'));
+  if (grafanaBase) {
+    for (const [id, r] of [['compare-grafana-a', data.a], ['compare-grafana-b', data.b]]) {
+      $(id).href = r.firstSampleMs ? `${grafanaBase}?from=${r.firstSampleMs}&to=${r.lastSampleMs}` : grafanaBase;
+    }
+  }
+  $('compare-result').hidden = false;
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -219,8 +375,10 @@ $('stop-btn').addEventListener('click', async () => {
 });
 
 $('refresh-runs').addEventListener('click', loadRuns);
+form.addEventListener('input', updateLoadSummary);
 
 (async () => {
   await Promise.all([loadConfig().catch(() => {}), loadProfiles().catch(() => {})]);
+  updateLoadSummary();
   pollStatus();
 })();

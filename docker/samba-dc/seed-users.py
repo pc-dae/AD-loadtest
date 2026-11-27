@@ -10,6 +10,9 @@ users CSV generator, so expectations always match the directory. For user i (1-b
   i % 10 == 0  also in ROLE_GROUPS LT-Role-nnn groups                  "heavy": large tokens
   i % 50 == 3  account disabled                                        logins rejected, denied
   i % 50 == 7  account expired                                         logins rejected, denied
+
+It also creates COMPUTER_COUNT computer accounts LTPC00001$..., with the test user password so the
+load generators can log on as them, and writes computers.csv next to users.csv.
 """
 import csv
 import os
@@ -21,9 +24,11 @@ from samba.samdb import SamDB
 count = int(os.environ.get("SEED_USERS", "500"))
 role_groups = int(os.environ.get("ROLE_GROUPS", "200"))
 nest_depth = int(os.environ.get("NEST_DEPTH", "8"))
+computer_count = int(os.environ.get("COMPUTER_COUNT", "100"))
 password = os.environ["TEST_USER_PASSWORD"]
 service_password = os.environ.get("SERVICE_PASSWORD", password)
 out = os.environ.get("USERS_CSV", "/export/users.csv")
+computers_out = os.path.join(os.path.dirname(out), "computers.csv")
 
 EXPIRED_SECONDS_AGO = 365 * 24 * 3600
 
@@ -94,9 +99,19 @@ if heavy:
     for group in role_group_names:
         samdb.add_remove_group_members(group, heavy, add_members_operation=True)
 
+computer_rows = []
+for i in range(1, computer_count + 1):
+    name = f"LTPC{i:05d}"
+    samdb.newcomputer(name)
+    samdb.setpassword(f"(sAMAccountName={name}$)", password, force_change_at_next_login=False)
+    computer_rows.append((f"{name}$", password, "false", "computer", "ok"))
+
 os.makedirs(os.path.dirname(out), exist_ok=True)
-with open(out, "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(("username", "password", "authorised", "profile", "expect"))
-    writer.writerows(rows)
-print(f"Seeded {count} users, {len(heavy)} in {role_groups} role groups, nesting {nest_depth} deep; wrote {out}")
+header = ("username", "password", "authorised", "profile", "expect")
+for path, data in ((out, rows), (computers_out, computer_rows)):
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(data)
+print(f"Seeded {count} users, {len(heavy)} in {role_groups} role groups, nesting {nest_depth} deep, "
+      f"and {computer_count} computers; wrote {out} and {computers_out}")

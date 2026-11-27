@@ -1,4 +1,5 @@
 # Local lab: Samba AD DC + InfluxDB + Grafana + Telegraf. JMeter runs on demand (profile "test").
+# Two JMeter servers (profile "distributed") act as extra load generators: make up-distributed.
 name: ad-loadtest
 
 x-lab-secrets: &lab-secrets
@@ -21,6 +22,7 @@ services:
       SEED_USERS: ${SEED_USERS:-500}
       ROLE_GROUPS: ${ROLE_GROUPS:-200}
       NEST_DEPTH: ${NEST_DEPTH:-8}
+      COMPUTER_COUNT: ${COMPUTER_COUNT:-100}
     volumes:
       - samba-lib:/var/lib/samba
       - samba-etc:/etc/samba
@@ -88,8 +90,13 @@ services:
       context: .
       dockerfile: docker/jmeter/Dockerfile
     entrypoint: ["java", "-jar", "/opt/ad-loadtest/controller.jar"]
+    hostname: controller
     environment:
       GRAFANA_URL: http://localhost:3000
+      INFLUX_URL: http://influxdb:8086
+      # Set by make up-distributed: runs are spread over these JMeter servers.
+      REMOTE_HOSTS: ${REMOTE_HOSTS:-}
+      RMI_HOSTNAME: controller
     volumes:
       - ./jmeter:/config:ro
       - ./data:/data:ro
@@ -100,6 +107,26 @@ services:
     depends_on:
       dc1:
         condition: service_healthy
+
+  gen1: &generator
+    image: ad-loadtest-jmeter:dev
+    profiles: [distributed]
+    hostname: gen1
+    command: ["-s", "-j", "/tmp/jmeter-server.log", "-Dserver_port=1099", "-Djava.rmi.server.hostname=gen1",
+              "-Jserver.rmi.localport=50000", "-Jserver.rmi.ssl.disable=true", "-Jgenerator.index=0"]
+    volumes:
+      - ./jmeter:/config:ro
+      - ./data:/data:ro
+    networks: [lab]
+    depends_on:
+      dc1:
+        condition: service_healthy
+
+  gen2:
+    <<: *generator
+    hostname: gen2
+    command: ["-s", "-j", "/tmp/jmeter-server.log", "-Dserver_port=1099", "-Djava.rmi.server.hostname=gen2",
+              "-Jserver.rmi.localport=50000", "-Jserver.rmi.ssl.disable=true", "-Jgenerator.index=1"]
 
   jmeter:
     image: ad-loadtest-jmeter:dev

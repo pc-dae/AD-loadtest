@@ -63,6 +63,30 @@ variable "nest_depth" {
   }
 }
 
+variable "computer_count" {
+  description = "Computer accounts LTPC00001$... to create for machine-logon tests"
+  type        = number
+  default     = 100
+}
+
+variable "telegraf_version" {
+  description = "Telegraf release installed on each DC to serve its performance counters"
+  type        = string
+  default     = "1.40.3"
+}
+
+variable "telegraf_sha256" {
+  description = "SHA-256 of telegraf-<version>_windows_amd64.zip"
+  type        = string
+  default     = "273867D9BB070625B8FC8627F3189899B1221C2C6540DD98F6E526108A89C9C3"
+}
+
+variable "metrics_port" {
+  description = "Port Telegraf serves DC metrics on, in Prometheus format"
+  type        = number
+  default     = 9273
+}
+
 variable "dc_ip_offset" {
   description = "Host number of each DC's fixed private IP in its subnet, e.g. 10 gives 10.0.0.10 in the default EKS VPC"
   type        = number

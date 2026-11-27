@@ -26,6 +26,10 @@ public final class Params {
         return Integer.parseInt(get(ctx, name, Integer.toString(defaultValue)));
     }
 
+    public static double getDouble(JavaSamplerContext ctx, String name, double defaultValue) {
+        return Double.parseDouble(get(ctx, name, Double.toString(defaultValue)));
+    }
+
     public static boolean getBool(JavaSamplerContext ctx, String name, boolean defaultValue) {
         return Boolean.parseBoolean(get(ctx, name, Boolean.toString(defaultValue)));
     }

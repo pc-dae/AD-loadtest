@@ -86,6 +86,17 @@ legend { font-size: 0.85rem; color: var(--text-2); padding: 0 4px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .hint { font-size: 0.8rem; color: var(--muted); margin: -6px 0 8px; }
+.load-table { margin: 0 0 12px; font-size: 0.85rem; }
+.load-table th, .load-table td { padding: 3px 4px; border: 0; }
+.load-table th[scope="row"] { font-weight: 500; color: var(--text-2); }
+.load-table input { padding: 5px 6px; text-align: right; }
+.load-table tbody tr:hover { background: transparent; }
+h3 { font-size: 0.9rem; font-weight: 600; margin: 18px 0 8px; }
+.compare-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+.compare-form .btn { margin-bottom: 12px; }
+.strong { font-weight: 600; }
+.delta-worse { color: var(--critical); }
+.delta-better { color: var(--good); }
 .error { color: var(--critical); font-size: 0.9rem; margin: 0 0 10px; }
 
 .actions { display: flex; gap: 10px; }
@@ -139,6 +150,6 @@ tbody tr:hover { background: var(--surface-2); }
 }
 @media (max-width: 520px) {
   .topbar, main { padding-left: 16px; padding-right: 16px; }
-  .row2, .row3 { grid-template-columns: 1fr; }
+  .row2, .row3, .compare-form { grid-template-columns: 1fr; }
   iframe#grafana { height: 700px; }
 }

@@ -22,6 +22,7 @@ if ($env:COMPUTERNAME -ne $ComputerName) {
 
 if ((Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4) {
     Write-Output 'Already a domain controller'
+${telegraf_setup}
     certutil -pulse | Out-Null
     Stop-Transcript
     exit

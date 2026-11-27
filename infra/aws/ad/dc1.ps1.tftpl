@@ -8,6 +8,7 @@
 #   otherwise    member of LT-Denied
 #   i % 10 == 0  also in RoleGroups LT-Role-nnn groups ("heavy": large Kerberos tickets)
 #   i % 50 == 3  disabled; i % 50 == 7 expired
+# plus ComputerCount computer accounts LTPC00001$... with the test user password, for machine logons.
 # EC2Launch runs this at every boot (persist below); each run carries on after the last reboot.
 # Progress is logged to C:\ad-loadtest-setup.log.
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,7 @@ $UserPassword = ConvertTo-SecureString '${test_user_password}' -AsPlainText -For
 $UserCount = ${user_count}
 $RoleGroups = ${role_groups}
 $NestDepth = ${nest_depth}
+$ComputerCount = ${computer_count}
 $SeededMarker = 'C:\ad-loadtest-seeded.txt'
 
 if ($env:COMPUTERNAME -ne $ComputerName) {
@@ -38,6 +40,8 @@ if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) {
     Restart-Computer -Force
     exit
 }
+
+${telegraf_setup}
 
 if (Test-Path $SeededMarker) {
     Write-Output 'Domain already set up'
@@ -107,7 +111,15 @@ if ($heavy.Count -gt 0) {
     foreach ($group in $roleGroupNames) { Add-Members $group $heavy }
 }
 
-Set-Content -Path $SeededMarker -Value "Seeded $UserCount users, $($heavy.Count) in $RoleGroups role groups, nesting $NestDepth deep $(Get-Date -Format o)"
+$ComputersOu = 'CN=Computers,' + (Get-ADDomain).DistinguishedName
+for ($i = 1; $i -le $ComputerCount; $i++) {
+    $name = 'LTPC{0:D5}' -f $i
+    if (-not (Get-ADComputer -Filter "Name -eq '$name'")) {
+        New-ADComputer -Name $name -SamAccountName "$name`$" -Path $ComputersOu -AccountPassword $UserPassword -Enabled $true
+    }
+}
+
+Set-Content -Path $SeededMarker -Value "Seeded $UserCount users, $($heavy.Count) in $RoleGroups role groups, nesting $NestDepth deep, $ComputerCount computers $(Get-Date -Format o)"
 Write-Output "Domain $DomainName ready with $UserCount load-test users"
 Stop-Transcript
 </powershell>

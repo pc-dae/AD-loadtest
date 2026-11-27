@@ -1,0 +1,64 @@
+{{- if gt (int .Values.generators.replicas) 0 }}
+# Headless: the controller addresses each JMeter server by its pod DNS name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-generator
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {{- include "adlt.selector" (dict "root" . "component" "generator") | nindent 4 }}
+  ports:
+    - { name: rmi-registry, port: 1099 }
+    - { name: rmi, port: 50000 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-generator
+  labels: {{- include "adlt.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-generator
+  replicas: {{ .Values.generators.replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {{- include "adlt.selector" (dict "root" . "component" "generator") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "adlt.labels" . | nindent 8 }}
+        app.kubernetes.io/component: generator
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      initContainers:
+        {{- include "adlt.prepare" . | nindent 8 }}
+      containers:
+        - name: jmeter-server
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          # The pod ordinal is this generator's index, used to split run-wide rates and totals.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              export JVM_ARGS="-Djava.security.krb5.conf=/config/krb5.conf -Djavax.security.auth.useSubjectCredsOnly=true"
+              exec jmeter -s -j /tmp/jmeter-server.log -Dserver_port=1099 -Djava.rmi.server.hostname="$POD_IP" \
+                -Jserver.rmi.localport=50000 -Jserver.rmi.ssl.disable=true -Jgenerator.index="${HOSTNAME##*-}"
+          env:
+            - { name: HEAP, value: {{ .Values.generators.heap | quote }} }
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+          ports:
+            - { name: rmi-registry, containerPort: 1099 }
+            - { name: rmi, containerPort: 50000 }
+          readinessProbe:
+            tcpSocket: { port: 1099 }
+            periodSeconds: 10
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: data, mountPath: /data }
+          resources: {{- toYaml .Values.generators.resources | nindent 12 }}
+      volumes:
+        {{- include "adlt.prepareVolumes" . | nindent 8 }}
+{{- end }}

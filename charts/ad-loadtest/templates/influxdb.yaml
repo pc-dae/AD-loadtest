@@ -32,7 +32,7 @@ spec:
     metadata:
       labels:
         {{- include "adlt.labels" . | nindent 8 }}
-        {{- include "adlt.selector" (dict "root" . "component" "influxdb") | nindent 8 }}
+        app.kubernetes.io/component: influxdb
     spec:
       containers:
         - name: influxdb

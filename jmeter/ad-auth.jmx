@@ -2,7 +2,7 @@
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="AD authentication &amp; authorisation" enabled="true">
-      <stringProp name="TestPlan.comments">LDAP, Kerberos and NTLM load against Active Directory. Settings come from JMeter properties (see jmeter/lab.properties).</stringProp>
+      <stringProp name="TestPlan.comments">LDAP, Kerberos and NTLM load against Active Directory. Settings come from JMeter properties (see jmeter/lab.properties). Each iteration of a thread group is one login attempt.</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
@@ -10,18 +10,6 @@
       </elementProp>
     </TestPlan>
     <hashTree>
-      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test users" enabled="true">
-        <stringProp name="filename">${__P(users.csv,users.csv)}</stringProp>
-        <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
-        <boolProp name="ignoreFirstLine">true</boolProp>
-        <stringProp name="delimiter">,</stringProp>
-        <boolProp name="quotedData">false</boolProp>
-        <boolProp name="recycle">true</boolProp>
-        <boolProp name="stopThread">false</boolProp>
-        <stringProp name="shareMode">shareMode.all</stringProp>
-      </CSVDataSet>
-      <hashTree/>
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="LDAP" enabled="true">
         <stringProp name="ThreadGroup.num_threads">${__P(ldap.threads,5)}</stringProp>
         <stringProp name="ThreadGroup.ramp_time">${__P(rampup,10)}</stringProp>
@@ -36,6 +24,32 @@
         <stringProp name="ThreadGroup.delay"></stringProp>
       </ThreadGroup>
       <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test users" enabled="true">
+          <stringProp name="filename">${__P(users.csv,users.csv)}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Pacing" enabled="true">
+          <stringProp name="TestPlan.comments">Not recorded. Spaces attempts to ldap.rate per second and stops the group after ldap.iterations (0 = no limit).</stringProp>
+          <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="protocol" elementType="Argument">
+                <stringProp name="Argument.name">protocol</stringProp>
+                <stringProp name="Argument.value">ldap</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.common.PacingSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
         <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="LDAP bind" enabled="true">
         <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
           <collectionProp name="Arguments.arguments">
@@ -116,6 +130,32 @@
         <stringProp name="ThreadGroup.delay"></stringProp>
       </ThreadGroup>
       <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test users" enabled="true">
+          <stringProp name="filename">${__P(users.csv,users.csv)}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Pacing" enabled="true">
+          <stringProp name="TestPlan.comments">Not recorded. Spaces attempts to kerberos.rate per second and stops the group after kerberos.iterations (0 = no limit).</stringProp>
+          <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="protocol" elementType="Argument">
+                <stringProp name="Argument.name">protocol</stringProp>
+                <stringProp name="Argument.value">kerberos</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.common.PacingSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
         <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Kerberos TGT (AS)" enabled="true">
         <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
           <collectionProp name="Arguments.arguments">
@@ -167,6 +207,98 @@
         </ConstantTimer>
         <hashTree/>
       </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Computers" enabled="true">
+        <stringProp name="TestPlan.comments">Machine-account logons: computers getting a TGT and an LDAP service ticket, as at boot and for Group Policy.</stringProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(computer.threads,0)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampup,10)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController">
+          <stringProp name="LoopController.loops">-1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,120)}</stringProp>
+        <stringProp name="ThreadGroup.delay"></stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test computers" enabled="true">
+          <stringProp name="filename">${__P(computers.csv,computers.csv)}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Pacing" enabled="true">
+          <stringProp name="TestPlan.comments">Not recorded. Spaces attempts to computer.rate per second and stops the group after computer.iterations (0 = no limit).</stringProp>
+          <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="protocol" elementType="Argument">
+                <stringProp name="Argument.name">protocol</stringProp>
+                <stringProp name="Argument.value">computer</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.common.PacingSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Computer Kerberos TGT (AS)" enabled="true">
+        <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="username" elementType="Argument">
+              <stringProp name="Argument.name">username</stringProp>
+              <stringProp name="Argument.value">${username}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="password" elementType="Argument">
+              <stringProp name="Argument.name">password</stringProp>
+              <stringProp name="Argument.value">${password}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.kerberos.KerberosTgtSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Computer Kerberos service ticket (TGS)" enabled="true">
+        <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="profile" elementType="Argument">
+              <stringProp name="Argument.name">profile</stringProp>
+              <stringProp name="Argument.value">${profile}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="expect" elementType="Argument">
+              <stringProp name="Argument.name">expect</stringProp>
+              <stringProp name="Argument.value">${expect}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.kerberos.KerberosServiceTicketSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
+        <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think time" enabled="true">
+          <stringProp name="ConstantTimer.delay">${__P(think.ms,0)}</stringProp>
+        </ConstantTimer>
+        <hashTree/>
+      </hashTree>
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="NTLM" enabled="true">
         <stringProp name="ThreadGroup.num_threads">${__P(ntlm.threads,5)}</stringProp>
         <stringProp name="ThreadGroup.ramp_time">${__P(rampup,10)}</stringProp>
@@ -181,6 +313,32 @@
         <stringProp name="ThreadGroup.delay"></stringProp>
       </ThreadGroup>
       <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Test users" enabled="true">
+          <stringProp name="filename">${__P(users.csv,users.csv)}</stringProp>
+          <stringProp name="fileEncoding">UTF-8</stringProp>
+          <stringProp name="variableNames">username,password,authorised,profile,expect</stringProp>
+          <boolProp name="ignoreFirstLine">true</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+        <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="Pacing" enabled="true">
+          <stringProp name="TestPlan.comments">Not recorded. Spaces attempts to ntlm.rate per second and stops the group after ntlm.iterations (0 = no limit).</stringProp>
+          <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="protocol" elementType="Argument">
+                <stringProp name="Argument.name">protocol</stringProp>
+                <stringProp name="Argument.value">ntlm</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="classname">io.github.pcdae.adloadtest.common.PacingSampler</stringProp>
+        </JavaSampler>
+        <hashTree/>
         <JavaSampler guiclass="JavaTestSamplerGui" testclass="JavaSampler" testname="NTLM SMB session" enabled="true">
         <elementProp name="arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
           <collectionProp name="Arguments.arguments">
@@ -259,7 +417,7 @@
             </elementProp>
             <elementProp name="testTitle" elementType="Argument">
               <stringProp name="Argument.name">testTitle</stringProp>
-              <stringProp name="Argument.value">${__P(app,ad-loadtest)} ${__time(yyyy-MM-dd HH:mm:ss)}</stringProp>
+              <stringProp name="Argument.value">${__P(run.title,${__P(app,ad-loadtest)} ${__time(yyyy-MM-dd HH:mm:ss)})}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
             <elementProp name="eventTags" elementType="Argument">

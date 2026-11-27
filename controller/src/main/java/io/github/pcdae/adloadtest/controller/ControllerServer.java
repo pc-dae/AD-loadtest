@@ -8,8 +8,10 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 
@@ -24,6 +26,7 @@ import com.sun.net.httpserver.HttpServer;
  * GET  /api/profiles       target property files available in the config directory
  * GET  /api/status         current or last run, with live JMeter summary and console tail
  * GET  /api/runs           run history (web and command-line runs)
+ * GET  /api/compare?a=&amp;b=  two runs side by side: per-transaction statistics and DC resource use
  * POST /api/runs           start a run (form-encoded RunRequest fields)
  * POST /api/runs/stop      stop the current run gracefully
  * GET  /results/{id}/...   JMeter HTML reports and raw results
@@ -50,11 +53,13 @@ public final class ControllerServer {
             Map.entry("properties", "text/plain; charset=utf-8"));
 
     private final RunManager runs;
+    private final Comparison comparison;
     private final Path resultsDir;
     private final String grafanaUrl;
 
-    private ControllerServer(RunManager runs, Path resultsDir, String grafanaUrl) {
+    private ControllerServer(RunManager runs, Comparison comparison, Path resultsDir, String grafanaUrl) {
         this.runs = runs;
+        this.comparison = comparison;
         this.resultsDir = resultsDir.toAbsolutePath().normalize();
         this.grafanaUrl = grafanaUrl;
     }
@@ -62,11 +67,15 @@ public final class ControllerServer {
     public static void main(String[] args) throws IOException {
         Path config = Path.of(env("CONFIG_DIR", "/config"));
         Path results = Path.of(env("RESULTS_DIR", "/results"));
+        List<String> remoteHosts = Arrays.stream(env("REMOTE_HOSTS", "").split(","))
+                .map(String::trim).filter(h -> !h.isEmpty()).toList();
         RunManager manager = new RunManager(config, results,
                 Path.of(env("JMETER_HOME", "/opt/apache-jmeter")),
                 env("PLAN", "ad-auth.jmx"),
-                env("KRB5_CONF", config.resolve("krb5.conf").toString()));
-        ControllerServer app = new ControllerServer(manager, results, env("GRAFANA_URL", "http://localhost:3000"));
+                env("KRB5_CONF", config.resolve("krb5.conf").toString()),
+                remoteHosts, env("RMI_HOSTNAME", ""));
+        ControllerServer app = new ControllerServer(manager, new Comparison(results, env("INFLUX_URL", "")), results,
+                env("GRAFANA_URL", "http://localhost:3000"));
 
         int port = Integer.parseInt(env("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
@@ -89,12 +98,17 @@ public final class ControllerServer {
             String method = ex.getRequestMethod();
             try {
                 switch (method + " " + path) {
-                    case "GET /api/config" -> json(ex, 200, Map.of("grafanaUrl", grafanaUrl, "dashboardUid", "ad-loadtest"));
+                    case "GET /api/config" -> json(ex, 200, Map.of("grafanaUrl", grafanaUrl, "dashboardUid", "ad-loadtest",
+                            "generators", runs.remoteHosts()));
                     case "GET /api/profiles" -> json(ex, 200, runs.profiles());
                     case "GET /api/status" -> json(ex, 200, status());
                     case "GET /api/runs" -> json(ex, 200, runs.history());
+                    case "GET /api/compare" -> {
+                        Map<String, String> q = query(ex);
+                        json(ex, 200, comparison.compare(q.get("a"), q.get("b")));
+                    }
                     case "POST /api/runs" -> {
-                        RunRequest request = RunRequest.fromForm(form(ex));
+                        RunRequest request = RunRequest.fromForm(form(ex), runs.remoteHosts().size());
                         json(ex, 201, runs.start(request).toMap());
                     }
                     case "POST /api/runs/stop" -> {
@@ -170,7 +184,15 @@ public final class ControllerServer {
     }
 
     private static Map<String, String> form(HttpExchange ex) throws IOException {
-        String body = new String(ex.getRequestBody().readNBytes(16_384), StandardCharsets.UTF_8);
+        return decode(new String(ex.getRequestBody().readNBytes(16_384), StandardCharsets.UTF_8));
+    }
+
+    private static Map<String, String> query(HttpExchange ex) {
+        String raw = ex.getRequestURI().getRawQuery();
+        return decode(raw == null ? "" : raw);
+    }
+
+    private static Map<String, String> decode(String body) {
         Map<String, String> form = new HashMap<>();
         for (String pair : body.split("&")) {
             if (pair.isEmpty()) {

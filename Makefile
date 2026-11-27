@@ -11,7 +11,7 @@ EXTRA            ?=
 
 COMPOSE := docker compose
 
-.PHONY: build up ui test smoke dashboard logs down clean images images-push
+.PHONY: build up up-distributed ui test smoke dashboard logs down clean images images-push
 
 build: ## Build the samplers and controller locally (the Docker image also builds them)
 	mvn -B -q package
@@ -21,6 +21,11 @@ up: ## Start the Samba AD DC, InfluxDB, Grafana, Telegraf and the web controller
 	@echo "Waiting for the domain controller..."
 	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' ad-loadtest-dc1-1)" = healthy ]; do sleep 3; done
 	@echo "Lab ready. Web UI: http://localhost:8080  Dashboard: http://localhost:3000/d/ad-loadtest"
+
+up-distributed: ## As up, plus two JMeter servers as load generators for the web controller
+	$(COMPOSE) --profile distributed build controller
+	REMOTE_HOSTS=gen1,gen2 $(COMPOSE) --profile distributed up -d dc1 influxdb grafana telegraf gen1 gen2 controller
+	@echo "Web UI: http://localhost:8080 (runs are spread over gen1 and gen2)"
 
 ui: ## Open the web front end
 	open http://localhost:8080
@@ -44,10 +49,10 @@ logs: ## Follow the domain controller log
 	$(COMPOSE) logs -f dc1
 
 down: ## Stop the lab, keeping the domain and metrics
-	$(COMPOSE) down
+	$(COMPOSE) --profile distributed down
 
 clean: ## Stop the lab and delete the domain, metrics and results
-	$(COMPOSE) down -v
+	$(COMPOSE) --profile distributed down -v
 	rm -rf data results target
 
 # ---------------------------------------------------------------------------

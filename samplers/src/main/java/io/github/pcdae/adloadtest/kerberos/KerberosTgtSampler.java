@@ -33,21 +33,23 @@ public class KerberosTgtSampler extends AbstractJavaSamplerClient {
         args.addArgument("profile", "${profile}");
         args.addArgument("expect", "${expect}");
         Params.addPropertyBacked(args, "ad.realm", "LAB.LOCAL");
+        Params.addPropertyBacked(args, "ad.host", "dc1.lab.local");
         return args;
     }
 
     @Override
     public void setupTest(JavaSamplerContext ctx) {
         realm = Params.get(ctx, "ad.realm", "LAB.LOCAL");
+        KerberosSupport.configure(ctx, realm);
     }
 
     @Override
     public SampleResult runTest(JavaSamplerContext ctx) {
         String username = ctx.getParameter("username");
         String principal = username.contains("@") ? username : username + "@" + realm;
-        char[] password = ctx.getParameter("password").toCharArray();
-
         UserProfile profile = UserProfile.from(ctx);
+        char[] password = profile.password(ctx).toCharArray();
+
         SampleResult result = profile.start();
         try {
             LoginContext lc = KerberosSupport.login(principal, password);

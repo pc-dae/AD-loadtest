@@ -39,38 +39,64 @@
         </label>
       </div>
 
+      <label class="field">
+        <span>Label <span class="muted">(optional, e.g. baseline or agent on)</span></span>
+        <input name="label" type="text" maxlength="60">
+      </label>
+
       <fieldset>
-        <legend>Threads per protocol</legend>
-        <div class="row3">
-          <label class="field">
-            <span>LDAP</span>
-            <input name="ldapThreads" type="number" min="0" max="5000" value="5" required>
-          </label>
-          <label class="field">
-            <span>Kerberos</span>
-            <input name="kerberosThreads" type="number" min="0" max="5000" value="5" required>
-          </label>
-          <label class="field">
-            <span>NTLM</span>
-            <input name="ntlmThreads" type="number" min="0" max="5000" value="5" required>
-          </label>
-        </div>
-        <p class="hint">0 disables that protocol.</p>
+        <legend>Load per protocol</legend>
+        <table class="load-table">
+          <thead>
+            <tr><th scope="col">Protocol</th><th scope="col" class="num">Threads</th><th scope="col" class="num">Rate /s</th><th scope="col" class="num">Attempts</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">LDAP</th>
+              <td><input name="ldapThreads" type="number" min="0" max="5000" value="5" required aria-label="LDAP threads"></td>
+              <td><input name="ldapRate" type="number" min="0" max="100000" step="any" value="0" aria-label="LDAP target rate per second"></td>
+              <td><input name="ldapAttempts" type="number" min="0" max="100000000" value="0" aria-label="LDAP total attempts"></td></tr>
+            <tr><th scope="row">Kerberos</th>
+              <td><input name="kerberosThreads" type="number" min="0" max="5000" value="5" required aria-label="Kerberos threads"></td>
+              <td><input name="kerberosRate" type="number" min="0" max="100000" step="any" value="0" aria-label="Kerberos target rate per second"></td>
+              <td><input name="kerberosAttempts" type="number" min="0" max="100000000" value="0" aria-label="Kerberos total attempts"></td></tr>
+            <tr><th scope="row">NTLM</th>
+              <td><input name="ntlmThreads" type="number" min="0" max="5000" value="5" required aria-label="NTLM threads"></td>
+              <td><input name="ntlmRate" type="number" min="0" max="100000" step="any" value="0" aria-label="NTLM target rate per second"></td>
+              <td><input name="ntlmAttempts" type="number" min="0" max="100000000" value="0" aria-label="NTLM total attempts"></td></tr>
+            <tr><th scope="row">Computers</th>
+              <td><input name="computerThreads" type="number" min="0" max="5000" value="0" required aria-label="Computer threads"></td>
+              <td><input name="computerRate" type="number" min="0" max="100000" step="any" value="0" aria-label="Computer target rate per second"></td>
+              <td><input name="computerAttempts" type="number" min="0" max="100000000" value="0" aria-label="Computer total attempts"></td></tr>
+          </tbody>
+        </table>
+        <p class="hint">An attempt is one login: LDAP bind + group check, Kerberos TGT + service ticket, an NTLM session, or a computer's Kerberos logon. Rate and attempts are for the whole run; 0 means no limit, and the run stops at the attempts total or the duration, whichever comes first. 0 threads disables a protocol.</p>
+        <p class="hint" id="load-summary" aria-live="polite"></p>
       </fieldset>
 
-      <div class="row2">
-        <label class="field">
-          <span>Think time (ms)</span>
-          <input name="thinkMs" type="number" min="0" max="60000" value="0" required>
-        </label>
-        <label class="field">
-          <span>Authorisation lookup</span>
-          <select name="authzBindAs">
-            <option value="user">Bind as each user</option>
-            <option value="service">Service account</option>
-          </select>
-        </label>
-      </div>
+      <fieldset>
+        <legend>Failure test</legend>
+        <div class="row2">
+          <label class="field">
+            <span>Bad passwords (%)</span>
+            <input name="badPasswordPct" type="number" min="0" max="100" step="any" value="0">
+          </label>
+          <label class="field">
+            <span>Max bad per user</span>
+            <input name="badPasswordMaxPerUser" type="number" min="0" max="1000" value="0">
+          </label>
+        </div>
+        <p class="hint">Wrong-password attempts are expected to be rejected. On a domain with account lockout, keep the maximum per user below the lockout threshold (0 = no cap).</p>
+      </fieldset>
+
+      <label class="field">
+        <span>Target DCs <span class="muted">(optional; blank = the profile's)</span></span>
+        <input name="targetHosts" type="text" placeholder="dc1.example.com,dc2.example.com" spellcheck="false">
+      </label>
+
+      <label class="field" id="generators-field" hidden>
+        <span>Load generators</span>
+        <select name="generators" id="generators"></select>
+      </label>
 
       <p id="form-error" class="error" role="alert" hidden></p>
 
@@ -123,9 +149,10 @@
         <thead>
           <tr>
             <th scope="col">Run</th>
+            <th scope="col">Label</th>
             <th scope="col">Source</th>
             <th scope="col">Profile</th>
-            <th scope="col" class="num">LDAP / Krb / NTLM</th>
+            <th scope="col" class="num">LDAP / Krb / NTLM / PC</th>
             <th scope="col" class="num">Duration</th>
             <th scope="col" class="num">Samples</th>
             <th scope="col" class="num">Req/s</th>
@@ -136,6 +163,63 @@
         </thead>
         <tbody id="runs"></tbody>
       </table>
+    </div>
+  </section>
+  <section class="card" aria-labelledby="compare-title">
+    <div class="card-head">
+      <h2 id="compare-title">Compare runs</h2>
+      <span class="muted small">e.g. without and with a security agent on the DCs</span>
+    </div>
+    <form id="compare-form" class="compare-form">
+      <label class="field">
+        <span>Baseline (A)</span>
+        <select name="a" id="compare-a" required></select>
+      </label>
+      <label class="field">
+        <span>Comparison (B)</span>
+        <select name="b" id="compare-b" required></select>
+      </label>
+      <button type="submit" class="btn btn-quiet">Compare</button>
+    </form>
+    <p id="compare-error" class="error" role="alert" hidden></p>
+    <div id="compare-result" hidden>
+      <p id="compare-meta" class="muted small"></p>
+      <h3>Response times and errors</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Transaction</th>
+              <th scope="col" class="num">Samples A / B</th>
+              <th scope="col" class="num">Req/s A / B</th>
+              <th scope="col" class="num">Mean ms A / B</th>
+              <th scope="col" class="num">Δ mean</th>
+              <th scope="col" class="num">p95 ms A / B</th>
+              <th scope="col" class="num">Δ p95</th>
+              <th scope="col" class="num">p99 ms A / B</th>
+              <th scope="col" class="num">Errors % A / B</th>
+            </tr>
+          </thead>
+          <tbody id="compare-tx"></tbody>
+        </table>
+      </div>
+      <h3>Domain controllers <span class="muted small">(steady state, after ramp-up)</span></h3>
+      <p id="compare-dc-note" class="muted small"></p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">DC</th>
+              <th scope="col">Metric</th>
+              <th scope="col" class="num">A</th>
+              <th scope="col" class="num">B</th>
+              <th scope="col" class="num">Δ</th>
+            </tr>
+          </thead>
+          <tbody id="compare-dc"></tbody>
+        </table>
+      </div>
+      <p class="small"><a id="compare-grafana-a" class="link" target="_blank" rel="noopener">Run A in Grafana ↗</a> · <a id="compare-grafana-b" class="link" target="_blank" rel="noopener">Run B in Grafana ↗</a></p>
     </div>
   </section>
 </main>

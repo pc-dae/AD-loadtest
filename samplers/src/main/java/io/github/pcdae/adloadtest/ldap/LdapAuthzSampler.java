@@ -88,7 +88,7 @@ public class LdapAuthzSampler extends AbstractJavaSamplerClient {
             } else {
                 conn = ldap.connect();
                 try {
-                    conn.bind(new SimpleBindRequest(ldap.bindName(username), ctx.getParameter("password")));
+                    conn.bind(new SimpleBindRequest(ldap.bindName(username), profile.password(ctx)));
                 } catch (LDAPException e) {
                     if (e.getResultCode() != ResultCode.INVALID_CREDENTIALS) {
                         throw e;

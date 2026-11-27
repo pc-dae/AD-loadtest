@@ -14,9 +14,10 @@ import com.unboundid.util.ssl.SSLUtil;
 import com.unboundid.util.ssl.TrustAllTrustManager;
 import com.unboundid.util.ssl.TrustStoreTrustManager;
 
+import io.github.pcdae.adloadtest.common.Generators;
 import io.github.pcdae.adloadtest.common.Params;
 
-/** Connection settings shared by the LDAP samplers. */
+/** Connection settings shared by the LDAP samplers. Each thread uses one DC from {@code ad.host}. */
 final class LdapSupport {
 
     static final String HOST = "ad.host";
@@ -37,7 +38,7 @@ final class LdapSupport {
     private final LDAPConnectionOptions options;
 
     LdapSupport(JavaSamplerContext ctx) throws GeneralSecurityException {
-        host = Params.get(ctx, HOST, "dc1.lab.local");
+        host = Generators.hostForThread(ctx, "dc1.lab.local");
         boolean tls = Params.getBool(ctx, TLS, true);
         port = Params.getInt(ctx, PORT, tls ? 636 : 389);
         upnSuffix = Params.get(ctx, UPN_SUFFIX, "lab.local");
